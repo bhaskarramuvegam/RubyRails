@@ -1,0 +1,88 @@
+# Redmine Child Status Sync Plugin
+
+This Redmine plugin automatically synchronizes parent issue status when child issues are updated with any status change.
+
+## Features
+
+- Automatically updates parent task status to match ANY status change in child issues
+- Syncs whatever status the child issue is updated to, to the parent issue
+- Only affects child issues (issues with a parent)
+- Safe and non-destructive - only updates status when actual changes are made
+- Includes comprehensive test coverage
+
+## Requirements
+
+- Redmine 4.x or newer
+- Ruby 2.6+
+- PostgreSQL or MySQL
+
+## Installation
+
+1. Copy the plugin to your Redmine plugins directory:
+   ```bash
+   cp -r redmine_child_status_sync /path/to/redmine/plugins/
+   ```
+
+2. Restart your Redmine server:
+   ```bash
+   cd /path/to/redmine
+   bundle exec rails server
+   ```
+
+## Usage
+
+Once installed, the plugin works automatically:
+
+1. Create a parent issue
+2. Create child issues under the parent
+3. When you update any child issue status to any status (e.g., "In Progress", "Testing", "Ready", etc.), the parent issue status will automatically update to the same status
+
+## How It Works
+
+- The plugin patches Redmine's Issue model
+- Uses an `after_save` callback to monitor status changes
+- When a child issue status changes:
+  - Finds the parent issue
+  - Updates parent status to match the child's new status (if different)
+  - Logs the change for debugging
+
+## Testing
+
+Run the plugin tests:
+
+```bash
+cd /path/to/redmine
+bundle exec rake test:plugins[name=redmine_child_status_sync]
+```
+
+## Configuration
+
+The plugin uses hardcoded status name "Development In Progress". To change this:
+
+1. Edit `lib/redmine_child_status_sync/issue_patch.rb`
+2. Modify the status name in the `sync_parent_status_on_child_update` method
+3. Update the test file accordingly
+
+## Troubleshooting
+
+- **Status not updating**: Ensure "Development In Progress" status exists exactly with that name
+- **Plugin not loading**: Check Redmine logs for errors during startup
+- **Tests failing**: Make sure your test database has the required issue statuses
+
+## Project Structure
+
+```
+redmine_child_status_sync/
+├── init.rb                          # Plugin registration
+├── README.rdoc                      # This documentation
+├── lib/
+│   └── redmine_child_status_sync/
+│       └── issue_patch.rb           # Main plugin logic
+└── test/
+    └── unit/
+        └── test_child_status_sync.rb # Test suite
+```
+
+## License
+
+This plugin is provided as-is. Modify and use according to your needs.

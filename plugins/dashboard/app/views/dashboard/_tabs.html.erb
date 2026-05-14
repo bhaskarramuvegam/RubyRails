@@ -1,0 +1,51 @@
+<%# plugins/dashboard/app/views/dashboard/_tabs.html.erb %>
+
+<div class="tabs">
+  <ul>
+    <li>
+      <%= link_to 'Bar Charts (Custom Query)', bar_charts_dashboard_index_path, class: (current_page?(bar_charts_dashboard_index_path) ? 'selected' : '') %>
+    </li>
+    <li>
+      <%= link_to 'Pie Charts', pie_charts_dashboard_index_path, class: (current_page?(pie_charts_dashboard_index_path) ? 'selected' : '') %>
+    </li>
+  </ul>
+</div>
+
+<style>
+  /* Basic CSS for the tabs - you might want to move this to a dedicated CSS file */
+  .tabs ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex; /* Makes them align horizontally */
+    border-bottom: 1px solid #ddd; /* A subtle separator */
+    margin-bottom: 15px;
+  }
+
+  .tabs li {
+    margin-right: 5px; /* Spacing between buttons */
+  }
+
+  .tabs a {
+    display: block;
+    padding: 8px 15px;
+    background-color: #f0f0f0;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    text-decoration: none;
+    color: #333;
+    font-weight: bold;
+    transition: background-color 0.2s ease, border-color 0.2s ease;
+  }
+
+  .tabs a:hover {
+    background-color: #e0e0e0;
+    border-color: #bbb;
+  }
+
+  .tabs a.selected {
+    background-color: #007bff; /* Blue for selected button */
+    color: white;
+    border-color: #007bff;
+  }
+</style>

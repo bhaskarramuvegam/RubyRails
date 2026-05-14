@@ -1,0 +1,50 @@
+<div class="dashboard-plugin-settings">
+  <label for="settings_enabled" style="font-weight: bold; margin-right: 10px;">Enable Dashboard Plugin</label>
+  <%= check_box_tag 'settings[enabled]', '1', @settings['enabled'].to_s == '1', :id => 'settings_enabled' %>
+</div>
+<hr>
+<% all_queries = IssueQuery.visible.sorted.to_a %>
+<div class="dashboard-plugin-settings">
+  <label for="settings_allowed_query_ids" style="font-weight: bold;">Allowed Custom Queries:</label><br>
+  <select name="settings[allowed_query_ids][]" id="settings_allowed_query_ids" multiple style="min-width: 700px; width: 100%; max-width: 1100px;">
+    <% allowed_ids = Array(@settings['allowed_query_ids']).map(&:to_s) %>
+    <% all_queries.each do |query| %>
+      <option value="<%= query.id %>" <%= allowed_ids.include?(query.id.to_s) ? 'selected' : '' %>><%= query.name %></option>
+    <% end %>
+  </select>
+  <br>
+  <small>You can search and select multiple queries.</small>
+</div>
+<%# Add Select2 assets if not already loaded %>
+<%= stylesheet_link_tag 'https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css' %>
+<style>
+  /* Make Select2 selected bubbles (choices) smaller and more compact */
+  .select2-container--default .select2-selection--multiple .select2-selection__choice {
+    font-size: 13px;
+    padding: 2px 8px;
+    margin-top: 2px;
+    margin-bottom: 2px;
+    border-radius: 10px;
+    height: 22px;
+    line-height: 18px;
+  }
+  .select2-container--default .select2-selection--multiple {
+    min-height: 28px;
+    padding: 2px 2px 2px 4px;
+  }
+</style>
+<%= javascript_include_tag 'https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js' %>
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    var select = document.getElementById('settings_allowed_query_ids');
+    if (select && window.jQuery && typeof jQuery(select).select2 === 'function') {
+      jQuery(select).select2({
+        width: '100%',
+        placeholder: 'Select allowed custom queries',
+        allowClear: true
+      });
+    }
+  });
+</script>
+
+

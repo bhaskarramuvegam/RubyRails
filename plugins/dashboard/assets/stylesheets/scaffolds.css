@@ -1,0 +1,203 @@
+/* === Table Styling === */
+table.list {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1em;
+  clear: both;
+}
+
+table.list th,
+table.list td {
+  padding: 8px;
+  border: 1px solid #ddd;
+  text-align: left;
+}
+
+table.list th {
+  background-color: #f2f2f2;
+  font-weight: bold;
+}
+
+table.list tbody tr:nth-child(even) {
+  background-color: #f9f9f9;
+}
+
+table.list tbody tr:hover {
+  background-color: #f0f0f0;
+}
+
+/* === Chart Layout Styling === */
+.dashboard-chart-wrapper {
+  display: flex;
+  justify-content: center;
+  padding: 20px;
+  margin: 10px 0 30px;
+}
+
+.chart-card {
+  border: 1px solid #eee;
+  padding: 20px;
+  border-radius: 10px;
+  background-color: #fff;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+  width: 100%;
+  max-width: 500px; /* Keep max-width for overall card width */
+  text-align: center;
+}
+
+.charts-container {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 30px;
+  margin-bottom: 30px;
+  align-items: flex-start;
+}
+
+.chart-item {
+  flex: 0 0 300px;
+  max-width: 300px;
+  padding: 15px;
+  border: 1px solid #eee;
+  border-radius: 6px;
+  background-color: #fff;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+  text-align: center;
+}
+
+.chart-item h4 {
+  margin: 0 0 15px;
+  color: #333;
+}
+
+.chart-card canvas,
+.chart-item canvas {
+  width: 100% !important;
+  height: auto !important; /* Changed from height: auto !important; to just height: auto; to be safe, though !important is likely needed */
+  max-height: none; /* <--- CRITICAL CHANGE: Removed the height cap */
+  display: block;
+}
+
+/* === Status Tags UI === */
+#selected_statuses_tags_container {
+  margin: 10px 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  border: 1px solid #ddd;
+  padding: 8px;
+  border-radius: 4px;
+  background-color: #f9f9f9;
+  min-height: 38px;
+  align-items: center;
+}
+
+.selected-status-tag {
+  display: inline-flex;
+  align-items: center;
+  background-color: #e0e0e0;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 0.9em;
+  color: #333;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.selected-status-tag .remove-status-btn {
+  margin-left: 6px;
+  color: #888;
+  text-decoration: none;
+  font-weight: bold;
+  font-size: 1.1em;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.selected-status-tag .remove-status-btn:hover {
+  color: #333;
+}
+
+.status-group-label {
+  font-weight: bold;
+  margin-right: 5px;
+  display: inline-block;
+}
+
+/* === Compact Choices.js Multi-select Styling (NEW) === */
+.choices[data-type*="select-multiple"] .choices__list--multiple {
+  display: block;
+  max-height: 100px; /* Keep max-height for multi-select dropdown list to prevent excessive height */
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.choices__list--multiple .choices__item {
+  display: inline-block;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 2px 4px;
+  font-size: 0.85em;
+}
+
+.choices__inner {
+  max-height: 110px; /* Keep max-height for the inner choices container */
+  overflow-y: auto;
+  border-radius: 3px;
+}
+
+/* === Form & Select Fixes === */
+.filter-group select,
+.filter-group input[type="date"],
+.filter-group input[type="text"] {
+  padding: 8px 10px;
+  font-size: 14px;
+  line-height: 1.5;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  box-sizing: border-box;
+  height: auto; /* Ensure form elements remain auto height */
+  font-family: inherit;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-color: #fff;
+}
+
+/* === Heading Spacing === */
+h3 {
+  clear: both;
+  margin: 2em 0 1em;
+}
+/* === Remove Dropdown Input for Status Choices === */
+#selected_statuses_tags_container .choices__input,
+#selected_statuses_tags_container .choices__list--dropdown {
+  display: none !important;
+}
+
+/* === Clean Display of Selected Tags Only === */
+#selected_statuses_tags_container .choices {
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  background: transparent;
+}
+
+#selected_statuses_tags_container .choices__inner {
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  max-height: 110px; /* Keep max-height for this specific choices inner */
+  overflow-y: auto;
+}
+
+#selected_statuses_tags_container .choices__list--multiple {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 100px; /* Keep max-height for this specific choices list */
+  overflow-y: auto;
+}

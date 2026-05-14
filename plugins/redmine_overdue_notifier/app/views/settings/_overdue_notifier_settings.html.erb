@@ -1,0 +1,126 @@
+<%# plugins/redmine_overdue_notifier/app/views/settings/_overdue_notifier_settings.html.erb %>
+
+<style>
+  /* Styling for the project checkboxes list */
+  .project-list-container {
+    max-height: 300px; /* Still good for long lists */
+    overflow-y: auto;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 8px;
+    background-color: #fafafa;
+  }
+
+  .project-item-flat {
+    margin: 4px 0;
+    padding: 2px 0;
+  }
+
+  .project-checkbox-flat {
+    margin-right: 8px;
+  }
+
+  .project-label-flat {
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .project-label-flat:hover {
+    background-color: #f0f0f0;
+    border-radius: 3px;
+  }
+
+  .select-all-controls {
+    margin-bottom: 10px;
+    padding: 8px;
+    background-color: #f5f5f5;
+    border-radius: 4px;
+    display: flex;
+    gap: 10px;
+  }
+
+  .select-all-controls button {
+    padding: 4px 8px;
+    font-size: 11px;
+    border: 1px solid #ccc;
+    background-color: white;
+    border-radius: 3px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .select-all-controls button:hover {
+    background-color: #e9e9e9;
+  }
+</style>
+
+<p>
+  <label for="settings_enabled">
+    <%= l(:label_enabled) %>
+  </label>
+  <%= check_box_tag 'settings[enabled]', '1', @settings['enabled'].to_s == '1' %>
+</p>
+
+<p>
+  <label for="project_selection">
+    <%= l(:label_project_plural) %>
+  </label><br>
+
+  <div class="select-all-controls">
+    <button type="button" id="select-all-projects">Select All</button>
+    <button type="button" id="deselect-all-projects">Deselect All</button>
+    <button type="button" id="toggle-all-projects">Toggle All</button>
+  </div>
+
+  <div class="project-list-container" id="project_selection">
+    <%
+      # Fetch all active projects (you might want to filter only active projects)
+      # .sorted is a Redmine helper to sort projects by name
+      all_projects = Project.active.sorted.to_a
+
+      # Extract selected project IDs from settings, defaulting to an empty array
+      selected_ids = (@settings['project_ids'] || []).map(&:to_i)
+    %>
+
+    <% all_projects.each do |project| %>
+      <% is_checked = selected_ids.include?(project.id) %>
+      <div class="project-item-flat">
+        <%= check_box_tag("settings[project_ids][]",
+                           project.id,
+                           is_checked,
+                           class: 'project-checkbox-flat',
+                           id: "project_#{project.id}") %>
+        <%= label_tag("project_#{project.id}",
+                      project.name,
+                      class: 'project-label-flat') %>
+      </div>
+    <% end %>
+  </div>
+</p>
+
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    const projectListContainer = document.getElementById('project_selection');
+
+    // --- Global Select/Deselect/Toggle Buttons ---
+
+    document.getElementById('select-all-projects').addEventListener('click', function() {
+      const checkboxes = projectListContainer.querySelectorAll('.project-checkbox-flat');
+      checkboxes.forEach(cb => cb.checked = true);
+    });
+
+    document.getElementById('deselect-all-projects').addEventListener('click', function() {
+      const checkboxes = projectListContainer.querySelectorAll('.project-checkbox-flat');
+      checkboxes.forEach(cb => cb.checked = false);
+    });
+
+    document.getElementById('toggle-all-projects').addEventListener('click', function() {
+      const checkboxes = projectListContainer.querySelectorAll('.project-checkbox-flat');
+      checkboxes.forEach(cb => cb.checked = !cb.checked);
+    });
+
+    // No need for individual checkbox change listeners for hierarchical logic anymore!
+    // The previous complex JavaScript functions (getDirectChildrenItems, getAllDescendantCheckboxes, getDirectParentItem) are removed.
+    // The initial indeterminate state setup is also removed.
+  });
+</script>

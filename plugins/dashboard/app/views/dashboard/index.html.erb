@@ -1,0 +1,52 @@
+<% content_for :header_tags do %>
+  <%= stylesheet_link_tag 'scaffolds', :plugin => 'dashboard' %>
+  <style>
+  .landing-page-container {
+    text-align: left;
+    max-width: 800px;
+    margin: 50px auto 50px 50px; /* left-align by setting left margin */
+  }
+
+  .landing-page-container h1 {
+    color: #333;
+    margin-bottom: 20px;
+  }
+
+  .button-group {
+    display: flex;
+    justify-content: flex-start; /* align buttons to the left */
+    gap: 15px;
+    margin-top: 20px;
+  }
+
+  .button-group .button {
+    background: none;
+    color: #333;
+    padding: 10px 20px;
+    border: 1px solid #bbb;
+    border-radius: 7px;
+    cursor: pointer;
+    font-size: 14px;
+    text-decoration: none;
+    transition: color 0.2s ease, border-color 0.2s ease;
+    box-shadow: none;
+  }
+
+  .button-group .button:hover {
+    color: #507AAA;
+    background: none;
+    text-decoration: none;
+  }
+</style>
+
+
+<% end %>
+
+<div class="landing-page-container">
+  <h1><%= l(:label_dashboard) %></h1>
+
+  <div class="button-group">
+     <%= link_to 'Task Allocation', bar_charts_dashboard_index_path, class: 'button' %>
+    <%= link_to 'Task Status', pie_charts_dashboard_index_path, class: 'button' %>
+  </div>
+</div>

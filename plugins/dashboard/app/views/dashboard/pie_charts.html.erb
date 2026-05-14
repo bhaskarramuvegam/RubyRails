@@ -1,0 +1,513 @@
+<% content_for :header_tags do %>
+  <%= stylesheet_link_tag 'scaffolds', :plugin => 'dashboard' %>
+  <%# Select2 CSS %>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/css/select2.min.css" rel="stylesheet" />
+  <%# Your custom styles (if any) %>
+  <style>
+    /* Add any specific styles for your dashboard, e.g., layout, chart box styles */
+    .dashboard-container {
+      padding: 20px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    h1, h2 {
+      color: #333;
+      margin-bottom: 20px;
+    }
+    .filter-section {
+      background-color: #f9f9f9;
+      border: 1px solid #ddd;
+      padding: 20px;
+      margin-bottom: 30px;
+      border-radius: 8px;
+    }
+    .filter-form {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 15px;
+    }
+    .filter-group label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: bold;
+      color: #555;
+    }
+    .filter-group select, .filter-group input[type="date"] {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      box-sizing: border-box; 
+    }
+    .submit-btn {
+      background-color: #007bff;
+      color: white;
+      padding: 10px 20px;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 16px;
+      margin-top: 20px;
+      grid-column: 1 / -1; 
+      justify-self: start; 
+    }
+    .submit-btn:hover {
+      background-color: #0056b3;
+    }
+    .pie-charts-section {
+      margin-top: 30px;
+    }
+    .charts-container {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 20px;
+    }
+    .chart-wrapper {
+      background-color: #fff;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 15px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      width: 100%; 
+      max-width: 520px; 
+      box-sizing: border-box;
+      text-align: left;
+    }
+    .chart-wrapper h3 {
+      margin-top: 0;
+      color: #333;
+    }
+    .chart-canvas {
+      max-height: 480px;
+    }
+    .no-filters-message {
+      text-align: center;
+      padding: 20px;
+      background-color: #ffe0b2;
+      border: 1px solid #ffcc80;
+      border-radius: 8px;
+      color: #e65100;
+      margin-top: 20px;
+    }
+    .selected-status-tag {
+      display: inline-flex;
+      align-items: center;
+      background-color: #e0e0e0;
+      padding: 5px 10px;
+      border-radius: 15px;
+      margin-right: 5px;
+      margin-bottom: 5px;
+      font-size: 0.9em;
+    }
+    .selected-status-tag .remove-status-btn {
+      margin-left: 8px;
+      color: #777;
+      text-decoration: none;
+      font-weight: bold;
+    }
+    .selected-status-tag .remove-status-btn:hover {
+      color: #333;
+    }
+    .status-group-label {
+      font-weight: bold;
+      margin-right: 10px;
+    }
+    /* Styles for Select2 integration */
+    .select2-container--default .select2-selection--multiple {
+        border: 1px solid #ccc !important;
+        border-radius: 4px !important;
+        min-height: 38px !important; /* Adjust height to match other inputs */
+    }
+    .select2-container--default .select2-selection--single {
+        border: 1px solid #ccc !important;
+        border-radius: 4px !important;
+        height: 38px !important; /* Adjust height to match other inputs */
+    }
+    .select2-container--default .select2-selection--single .select2-selection__rendered {
+        line-height: 36px !important; /* Adjust line-height to center text */
+    }
+    .select2-container--default .select2-selection--single .select2-selection__arrow {
+        height: 36px !important; /* Adjust arrow height */
+    }
+    .select2-container .select2-selection--multiple .select2-selection__rendered {
+        padding: 0 5px !important;
+    }
+    .select2-container .select2-search--inline .select2-search__field {
+        margin-top: 7px !important;
+    }
+  </style>
+  <%= javascript_include_tag 'chart.min', :plugin => 'dashboard' %>
+  <%# Select2 JavaScript %>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/js/select2.min.js"></script>
+<% end %>
+
+<div class="contextual">
+  <%= link_to 'View Bar Charts', bar_charts_dashboard_index_path, class: 'icon icon-stats' %>
+</div>
+<div class="dashboard-header" style="text-align: left; padding: 15px 0;">
+  <h2 style=" font-size: 1.8em; color: #333;">Dashboard</h2>
+</div>
+<div class="dashboard-container">
+  <!---<h1><%= l(:label_dashboard) %></h1>--->
+
+  <div class="filter-section">
+    <h2>Filters</h2>
+    <%= form_tag pie_charts_dashboard_index_path, method: :get, id: 'dashboard_filters_form' do %>
+      <div class="filter-form">
+        <div class="filter-group">
+          <label for="project_ids"><%= l(:field_project) %>:</label>
+          <%= select_tag :project_ids, options_for_select([[l(:label_all), 0]] + @projects.map{|p| [p.name, p.id]}, @selected_project_ids), multiple: true, class: 'select2-multi' %>
+        </div>
+
+        <div class="filter-group">
+          <label for="tracker_ids"><%= l(:field_tracker) %>:</label>
+          <%= select_tag :tracker_ids, options_for_select([[l(:label_all), 0]] + @trackers.map{|t| [t.name, t.id]}, @selected_tracker_ids), multiple: true, class: 'select2-multi' %>
+        </div>
+
+        <div class="filter-group">
+          <label for="priority_ids"><%= l(:field_priority) %>:</label>
+          <%= select_tag :priority_ids, options_for_select([[l(:label_all), 0]] + @issue_priorities.map{|p| [p.name, p.id]}, @selected_priority_ids), multiple: true, class: 'select2-multi' %>
+        </div>
+
+
+
+
+
+
+        <div class="filter-group" style="display: flex; gap: 12px; align-items: flex-end; grid-column: span 2;">
+          <div style="flex: 1;">
+            <label for="start_date"><%= l(:label_start_date) %> (on or after):</label>
+            <%= date_field_tag :start_date, @selected_start_date %>
+          </div>
+          <div style="flex: 1;">
+            <label for="due_date"><%= l(:label_due_date) %> (on or before):</label>
+            <%= date_field_tag :due_date, @selected_due_date %>
+          </div>
+        </div>
+
+        <div class="filter-group" style="grid-column: 1 / -1;">
+          <label style="display: block; font-weight: bold; margin-bottom: 4px;"><%= l(:field_status) %>:</label>
+          <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 18px 24px; margin-bottom: 6px;">
+            <div style="display: flex; align-items: center; gap: 14px;">
+              <%= check_box_tag "default_open_statuses", "1", (@selected_status_ids & @open_statuses.map(&:id)).any? || !params[:status_ids].present?, :id => "default_open_statuses_cb", :class => "default-status-filter-cb", style: 'margin: 0 3px 0 0;' %>
+              <%= label_tag "default_open_statuses_cb", "Open", style: 'font-weight: 400; margin: 0 10px 0 2px;' %>
+              <%= check_box_tag "default_closed_statuses", "1", (@selected_status_ids & @closed_statuses.map(&:id)).any?, :id => "default_closed_statuses_cb", :class => "default-status-filter-cb", style: 'margin: 0 3px 0 0;' %>
+              <%= label_tag "default_closed_statuses_cb", "Closed", style: 'font-weight: 400; margin: 0 10px 0 2px;' %>
+              <label for="add_status_select" style="font-weight: 400; margin: 0 6px 0 0;">Add more:</label>
+              <%= select_tag "add_status_select", options_for_select([["Select Status", ""]] + (@issue_statuses.map{|s| [s.name, s.id] }.sort_by(&:first) ) ), :id => "add_status_select", :onchange => "addStatusFromDropdown(this);", class: 'select2-single', style: 'min-width: 160px;' %>
+            </div>
+          </div>
+          <div id="selected_statuses_tags_container" style="margin-top: 8px;">
+            <%# Hidden inputs and tags will be added here by JS %>
+          </div>
+        </div>
+
+      </div>
+      <%= submit_tag 'Apply Filters', :class => 'submit-btn' %>
+    <% end %>
+  </div>
+
+  <div class="pie-charts-section">
+    <h2>Issue Analytics - Pie Charts</h2>
+
+    <%# DEBUG: Add this to see if data is being generated %>
+    <% if Rails.env.development? %>
+      <div style="background: #f0f0f0; padding: 10px; margin: 10px 0; font-family: monospace; border: 1px dashed #ccc;">
+        <strong>DEBUG - Pie Chart Data:</strong><br>
+        <pre><%= @pie_chart_data.inspect %></pre>
+      </div>
+    <% end %>
+
+    <%# Conditional display based on @show_pie_charts %>
+    <div id="pieChartsContainer" style="display: <%= @show_pie_charts ? 'block' : 'none' %>;">
+      <div class="charts-container">
+        <div class="chart-wrapper">
+          <h3><%= l(:label_status_distribution) %></h3>
+          <canvas id="statusPieChart" class="chart-canvas"></canvas>
+        </div>
+
+        <div class="chart-wrapper">
+          <h3><%= l(:label_tracker_distribution) %></h3>
+          <canvas id="trackerPieChart" class="chart-canvas"></canvas>
+        </div>
+
+        <div class="chart-wrapper">
+          <h3><%= l(:label_priority_distribution) %></h3>
+          <canvas id="priorityPieChart" class="chart-canvas"></canvas>
+        </div>
+
+        <div class="chart-wrapper">
+          <h3>Project Distribution</h3>
+          <canvas id="projectPieChart" class="chart-canvas"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div id="noChartsMessage" class="no-filters-message" style="display: <%= @show_pie_charts ? 'none' : 'block' %>;">
+      <p><%= l(:message_no_charts_info) %></p>
+      <p><%= l(:message_charts_will_appear) %></p>
+      <% unless @filtered_issues.any? %>
+        <p><%= l(:message_no_issues_found) %></p>
+      <% end %>
+    </div>
+  </div>
+
+  <%# Removed the bar-charts-section entirely %>
+</div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    // --- Initialize Select2 on all select elements ---
+    $('.select2-multi').select2({
+      placeholder: "Select options...",
+      allowClear: true // Allows clearing selection
+    });
+    $('.select2-single').select2({
+      placeholder: "Select an option...",
+      allowClear: true // Allows clearing selection for single selects too
+    });
+
+    // --- Status Filter Management Logic (largely unchanged, but now uses Select2 dropdown) ---
+    const form = document.getElementById('dashboard_filters_form');
+    const addStatusSelect = document.getElementById('add_status_select');
+    const selectedStatusesTagsContainer = document.getElementById('selected_statuses_tags_container');
+    const defaultOpenCb = document.getElementById('default_open_statuses_cb');
+    const defaultClosedCb = document.getElementById('default_closed_statuses_cb');
+
+    const allIssueStatuses = <%= @issue_statuses.map{|s| {id: s.id, name: s.name, is_closed: s.is_closed?}}.to_json.html_safe %>;
+    const statusMap = new Map(allIssueStatuses.map(s => [s.id, {name: s.name, isClosed: s.is_closed}]));
+
+    const openStatusIds = <%= @open_statuses.map(&:id).to_json.html_safe %>;
+    const closedStatusIds = <%= @closed_statuses.map(&:id).to_json.html_safe %>;
+
+    // Initialize with selected_status_ids from the controller
+    const activeSelectedStatusIds = new Set();
+    <%= @selected_status_ids.to_json.html_safe %>.forEach(id => activeSelectedStatusIds.add(id));
+
+    // Function to update the UI (tags and dropdown)
+    function updateStatusFilterUI() {
+      selectedStatusesTagsContainer.innerHTML = ''; // Clear existing tags
+
+      // Add hidden inputs for each selected status ID
+      activeSelectedStatusIds.forEach(statusId => {
+        const statusInfo = statusMap.get(statusId);
+        if (statusInfo) {
+          // Create visual tag
+          const tag = document.createElement('span');
+          tag.className = 'selected-status-tag';
+          tag.dataset.statusId = statusId;
+          tag.innerHTML = `
+            ${statusInfo.name}
+            <a href="#" class="remove-status-btn" data-status-id="${statusId}">&times;</a>
+          `;
+          selectedStatusesTagsContainer.appendChild(tag);
+
+          // Create hidden input for form submission
+          const hiddenInput = document.createElement('input');
+          hiddenInput.type = 'hidden';
+          hiddenInput.name = 'status_ids[]';
+          hiddenInput.value = statusId;
+          selectedStatusesTagsContainer.appendChild(hiddenInput);
+        }
+      });
+
+      // Populate the 'Add more' dropdown with unselected statuses
+      // Destroy Select2 before updating options, then re-initialize
+      $(addStatusSelect).select2('destroy');
+      addStatusSelect.innerHTML = '';
+      const defaultOption = document.createElement('option');
+      defaultOption.value = '';
+      defaultOption.textContent = 'Select Status';
+      addStatusSelect.appendChild(defaultOption);
+      allIssueStatuses.forEach(status => {
+        if (!activeSelectedStatusIds.has(status.id)) {
+          const option = document.createElement('option');
+          option.value = status.id;
+          option.textContent = status.name;
+          addStatusSelect.appendChild(option);
+        }
+      });
+      $(addStatusSelect).val('').select2({
+        placeholder: "Select an option...",
+        allowClear: true
+      }); // Re-initialize Select2 and reset value
+    }
+
+    // Initial UI render
+    updateStatusFilterUI();
+
+    // Event listeners for default checkboxes
+    defaultOpenCb.addEventListener('change', function() {
+      if (this.checked) {
+        openStatusIds.forEach(id => activeSelectedStatusIds.add(id));
+      } else {
+        openStatusIds.forEach(id => activeSelectedStatusIds.delete(id));
+      }
+      updateStatusFilterUI();
+    });
+
+    defaultClosedCb.addEventListener('change', function() {
+      if (this.checked) {
+        closedStatusIds.forEach(id => activeSelectedStatusIds.add(id));
+      } else {
+        closedStatusIds.forEach(id => activeSelectedStatusIds.delete(id));
+      }
+      updateStatusFilterUI();
+    });
+
+    // Function for adding status from dropdown (global for onchange attribute)
+    window.addStatusFromDropdown = function(selectElement) {
+      const statusId = parseInt(selectElement.value);
+      if (statusId && !isNaN(statusId)) {
+        activeSelectedStatusIds.add(statusId);
+        updateStatusFilterUI();
+      }
+    };
+
+    // Event listener for removing status tags
+    selectedStatusesTagsContainer.addEventListener('click', function(event) {
+      if (event.target.classList.contains('remove-status-btn')) {
+        event.preventDefault();
+        const statusIdToRemove = parseInt(event.target.dataset.statusId);
+        if (activeSelectedStatusIds.has(statusIdToRemove)) {
+          activeSelectedStatusIds.delete(statusIdToRemove);
+
+          // Uncheck default checkboxes if all statuses of that type are removed
+          if (openStatusIds.includes(statusIdToRemove) && defaultOpenCb.checked) {
+            const remainingOpenSelected = openStatusIds.some(id => activeSelectedStatusIds.has(id));
+            if (!remainingOpenSelected) {
+              defaultOpenCb.checked = false;
+            }
+          }
+          if (closedStatusIds.includes(statusIdToRemove) && defaultClosedCb.checked) {
+            const remainingClosedSelected = closedStatusIds.some(id => activeSelectedStatusIds.has(id));
+            if (!remainingClosedSelected) {
+              defaultClosedCb.checked = false;
+            }
+          }
+          updateStatusFilterUI();
+        }
+      }
+    });
+
+    // --- Chart.js Initialization ---
+    const pieChartData = <%= raw @pie_chart_data.to_json %>;
+
+    console.log('Pie Chart Data (JS):', pieChartData);
+
+    function getChartColors(count) {
+      const colors = [
+        '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0',
+        '#9966FF', '#FF9F40', '#FF6B6B', '#4ECDC4',
+        '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD',
+        '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E9',
+        '#A0522D', '#CD5C5C', '#8A2BE2', '#7FFF00',
+        '#DC143C', '#00FFFF', '#00008B', '#008B8B'
+      ];
+      return Array.from({ length: count }, (_, i) => colors[i % colors.length]);
+    }
+
+    function createChart(canvasId, type, data, title, options = {}) {
+      try {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) {
+          console.error(`Canvas with ID ${canvasId} not found`);
+          return;
+        }
+
+        if (canvas.chart) {
+          canvas.chart.destroy();
+        }
+
+        if (!data || data.length === 0) {
+          console.warn(`No data provided for ${title}`);
+          const ctx = canvas.getContext('2d');
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.fillStyle = '#666';
+          ctx.font = '14px Arial';
+          ctx.textAlign = 'center';
+          ctx.fillText('No data available', canvas.width / 2, canvas.height / 2);
+          return;
+        }
+
+        const ctx = canvas.getContext('2d');
+        canvas.style.width = '100%';
+        canvas.style.height = '480';
+        canvas.width = canvas.offsetWidth;
+        canvas.height = 480;
+
+        const labels = data.map(item => String(item.name));
+        const values = data.map(item => Number(item.value));
+
+        const backgroundColors = getChartColors(data.length);
+
+        const chartConfig = {
+          type: type,
+          data: {
+            labels: labels,
+            datasets: [{
+              label: 'Issues',
+              data: values,
+              backgroundColor: backgroundColors,
+              borderWidth: 1,
+              borderColor: '#fff'
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
+                position: 'bottom',
+                align: 'start', // left align legend
+                labels: {
+                  padding: 15,
+                  usePointStyle: true,
+                  font: {
+                    size: 12
+                  },
+                  textAlign: 'left' // left align legend text
+                }
+              },
+              tooltip: {
+                align: 'left', // left align tooltip text
+                callbacks: {
+                  label: function(context) {
+                    let label = context.label || '';
+                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                    const percentage = ((context.parsed / total) * 100).toFixed(1);
+                    return `${label}: ${context.parsed} (${percentage}%)`;
+                  }
+                }
+              }
+            },
+            ...options
+          }
+        };
+        canvas.chart = new Chart(ctx, chartConfig);
+        console.log(`Successfully created ${title} chart (${type})`);
+      } catch (error) {
+        console.error(`Error creating ${title} chart:`, error);
+      }
+    }
+
+    if (typeof Chart === 'undefined') {
+      console.error('Chart.js library not loaded');
+      return;
+    }
+
+    // Render Pie Charts
+    const pieChartsContainer = document.getElementById('pieChartsContainer');
+    if (pieChartsContainer && pieChartsContainer.style.display === 'block' && pieChartData && Object.keys(pieChartData).length > 0) {
+      createChart('statusPieChart', 'pie', pieChartData.status, 'Status Distribution');
+      createChart('trackerPieChart', 'pie', pieChartData.tracker, 'Tracker Distribution');
+      createChart('priorityPieChart', 'pie', pieChartData.priority, 'Priority Distribution');
+      createChart('projectPieChart', 'pie', pieChartData.project, 'Project Distribution');
+    } else {
+      console.log('Pie charts container is not visible or no data, skipping pie chart rendering.');
+    }
+  });
+
+</script>

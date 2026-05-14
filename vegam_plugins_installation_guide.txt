@@ -1,0 +1,5 @@
+GUIDE TO INSTALL THE PLUGINS PRESENT IN THIS FOLDER:
+
+- None of the plugins in this folder perform any sort of writes or migrate to the database, so all of the plugins can be simply unzipped in the main redmine/plugins directory.
+- The email plugin is built to run a rake task periodically and it contatains the adequate script to run the task which can be included in a cron job as desired(for more details read the rubydoc).
+- Any detail regarding the plugin can be acquired why the rubydoc or README present in the plugin root directory.

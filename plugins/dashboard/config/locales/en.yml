@@ -1,0 +1,27 @@
+en:
+  label_dashboard: "Dashboard"
+  field_id: "ID"
+  field_project: "Project"
+  field_tracker: "Tracker"
+  field_status: "Status"
+  field_subject: "Subject"
+  field_assigned_to: "Assignee"
+  field_updated_on: "Updated On"
+  button_apply: "Apply Filters"
+
+  label_all: "All"
+  field_author: "Author"
+  field_priority: "Priority"
+  field_category: "Category"
+  field_fixed_version: "Fixed Version"
+  label_start_date: "Start Date"
+  label_due_date: "Due Date"
+
+  # Ensure these are present for chart titles and messages
+  label_status_distribution: "Status Distribution"
+  label_tracker_distribution: "Tracker Distribution"
+  label_priority_distribution: "Priority Distribution"
+  label_assignee_distribution: "Assignee Distribution"
+  message_no_charts_info: "📊 Apply some filters above to see detailed pie chart analytics"
+  message_charts_will_appear: "Charts will appear when you select specific projects, trackers, priorities, or other filters."
+  message_no_issues_found: "No issues found for the selected criteria." # Updated message based on earlier recommendation

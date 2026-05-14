@@ -1,0 +1,27 @@
+= Redmine Overdue Notifier Plugin
+
+This plugin sends daily email notifications for overdue issues in the selected Redmine projects.
+
+== Installation
+
+1. Clone the plugin into the Redmine `plugins` directory:
+   git clone <repo_url> plugins/redmine_overdue_notifier
+
+2. Give execute permission to the `run_overdue_notifier.sh` script located in the plugin root directory:
+   chmod +x plugins/redmine_overdue_notifier/run_overdue_notifier.sh
+
+3. Create a cron job to run the script at the desired time.
+
+== Usage
+
+* The plugin defines a Rake task to send notifications.
+* You can test the task directly by running it from the Redmine root directory:
+
+  bundle exec rake redmine_overdue_notifier:send_notifications RAILS_ENV=production
+
+== Sample Cron Job
+
+Here is a sample cron job that runs the notifier every day at 1:00 AM:
+
+  0 1 * * * /var/lib/redmine/plugins/redmine_overdue_notifier/run_overdue_notifier.sh >> /var/lib/redmine/log/production.log 2>&1
+

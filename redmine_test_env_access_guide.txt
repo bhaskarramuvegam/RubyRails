@@ -1,0 +1,17 @@
+GUIDE TO LOGIN TO REDMINE TEST ENVIRONMENT FROM A WINDOWS SYSTEM(WSL must be installed):
+
+Step 1 - Open your preferred terminal
+Step 2 - Open WSL(windows subsystem for Linux)
+Step 3 - ssh into the test server with the following command: ssh vegam@192.168.3.91
+Step 4 - A password prompt will appear, type the following password(this is the same password for superuser also i.e, step 5): Vegam@123
+Step 5 - Once you ssh into the test server, log in as the superuser using the following command: sudo su
+Step 6 - Now we have to connect to the postgres server using the following command(password - pass123): pslq -U postgres
+Step 7 - We switch the database to work with the redmine test database(trakerdb) using the followin command: \c trakerdb
+Step 8 - You are now connected to the Redmine test database, you can run any query from now on.
+
+
+IMPORTANT:
+Redmine test server is located at the directory /var/lib/redmine.
+
+WARNING:
+Ip address of the remote server, remote server user, password for the remote server, postgres password, database name are all subject to change. Please ask the IT department for the exact user_ids and passwords.

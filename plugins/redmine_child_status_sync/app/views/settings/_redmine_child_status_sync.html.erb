@@ -1,0 +1,25 @@
+<div class="box">
+  <h3>Child Status Sync Plugin Settings</h3>
+  
+  <p>
+    <label>
+      <%= check_box_tag 'settings[enabled]', '1', @settings['enabled'] == '1' %>
+      <%= label_tag 'settings[enabled]', 'Enable Child Status Sync' %>
+    </label>
+    <em style="display: block; margin-top: 5px; color: #666;">When enabled, child issue status changes will automatically update parent issue status</em>
+  </p>
+
+  <p>
+    <label>
+      <%= check_box_tag 'settings[enable_logging]', '1', @settings['enable_logging'] == '1' %>
+      <%= label_tag 'settings[enable_logging]', 'Enable Debug Logging' %>
+    </label>
+    <em style="display: block; margin-top: 5px; color: #666;">When enabled, detailed debug messages will be logged to the Redmine log file for troubleshooting</em>
+  </p>
+
+  <p style="margin-top: 20px; padding: 10px; background-color: #f5f5f5; border-left: 3px solid #2196F3;">
+    <strong>How it works:</strong><br>
+    When a child issue's status is updated to any status, this plugin automatically updates the parent issue's status to match. 
+    This ensures parent tasks reflect the current progress of their subtasks.
+  </p>
+</div>

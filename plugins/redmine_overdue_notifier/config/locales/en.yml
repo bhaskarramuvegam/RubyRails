@@ -1,0 +1,17 @@
+# plugins/redmine_overdue_notifier/config/locales/en.yml
+
+en:
+  label_enabled: "Enable Overdue Notification"
+  text_overdue_issue_subject: "Overdue Issue: #%{id} - %{issue}"
+  text_overdue_issue_greeting: "Hi %{assignee},"
+  text_overdue_issue_body: |
+    This is an automated reminder that the following issue in project "%{project}"
+    is overdue and requires your attention:
+
+    Tracker: %{tracker}
+    Issue ID: %{id}
+    Subject: %{subject}
+    Due Date: %{due_date}
+
+  text_overdue_issue_link: "You can view the issue here"
+  text_overdue_issue_footer: "This is an automated notification. Please do not reply to this email."

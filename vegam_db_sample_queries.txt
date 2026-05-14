@@ -1,0 +1,243 @@
+===========================================================================
+ QUERY 1: COUNT ISSUES WHERE SOURCE CF IS FILLED AND TARGET CF IS EMPTY
+===========================================================================
+
+Description:
+Count the number of issues for a specific tracker where:
+- The source custom field (e.g., ID 148) is filled
+- The target custom field (e.g., ID 130) is empty
+
+----------------------------------------------------------------------------
+
+SELECT
+    COUNT(*)
+FROM
+    public.issues i
+JOIN
+    public.trackers t ON i.tracker_id = t.id
+JOIN
+    public.custom_values cv_source
+        ON cv_source.customized_type = 'Issue'
+        AND cv_source.customized_id = i.id
+        AND cv_source.custom_field_id = 148 -- Source CF ID
+LEFT JOIN
+    public.custom_values cv_target_existing
+        ON cv_target_existing.customized_type = 'Issue'
+        AND cv_target_existing.customized_id = i.id
+        AND cv_target_existing.custom_field_id = 130 -- Target CF ID
+WHERE
+    t.id = ANY('{4}'::INT[]) -- Example tracker ID(s)
+    AND cv_source.value IS NOT NULL
+    AND cv_source.value <> ''
+    AND cv_target_existing.value IS NULL;
+
+sql
+Copy
+Edit
+===========================================================================
+ QUERY 2: COPY FROM ONE CUSTOM FIELD TO ANOTHER FOR SPECIFIC TRACKERS
+===========================================================================
+
+Description:
+- Insert new target custom field values if missing
+- Update existing target values from source
+- Filters by trackers and non-empty source values
+
+----------------------------------------------------------------------------
+
+DO $$
+DECLARE
+    source_custom_field_id INT := 129; -- Source CF ID
+    target_custom_field_id INT := 130; -- Target CF ID
+    target_tracker_ids INT[] := '{1,5,27,25}'; -- Tracker IDs
+
+    inserted_count INT := 0;
+    updated_count INT := 0;
+    total_changed INT := 0;
+BEGIN
+
+    RAISE NOTICE 'Starting custom field sync from CF % to CF % for trackers: %',
+                 source_custom_field_id, target_custom_field_id, target_tracker_ids;
+
+    -- STEP 1: Insert if target CF is missing
+    INSERT INTO public.custom_values (customized_type, customized_id, custom_field_id, value)
+    SELECT
+        'Issue',
+        i.id,
+        target_custom_field_id,
+        cv_source.value
+    FROM
+        public.issues i
+    JOIN
+        public.trackers t ON i.tracker_id = t.id
+    JOIN
+        public.custom_values cv_source
+            ON cv_source.customized_type = 'Issue'
+            AND cv_source.customized_id = i.id
+            AND cv_source.custom_field_id = source_custom_field_id
+    LEFT JOIN
+        public.custom_values cv_target_existing
+            ON cv_target_existing.customized_type = 'Issue'
+            AND cv_target_existing.customized_id = i.id
+            AND cv_target_existing.custom_field_id = target_custom_field_id
+    WHERE
+        t.id = ANY(target_tracker_ids)
+        AND cv_source.value IS NOT NULL
+        AND cv_source.value <> ''
+        AND cv_target_existing.customized_id IS NULL;
+
+    GET DIAGNOSTICS inserted_count = ROW_COUNT;
+
+    -- STEP 2: Update if target CF exists
+    UPDATE public.custom_values cv_target
+    SET value = cv_source.value
+    FROM
+        public.issues i
+    JOIN
+        public.trackers t ON i.tracker_id = t.id
+    JOIN
+        public.custom_values cv_source
+            ON cv_source.customized_type = 'Issue'
+            AND cv_source.customized_id = i.id
+            AND cv_source.custom_field_id = source_custom_field_id
+    WHERE
+        cv_target.customized_type = 'Issue'
+        AND cv_target.custom_field_id = target_custom_field_id
+        AND cv_target.customized_id = i.id
+        AND t.id = ANY(target_tracker_ids)
+        AND cv_source.value IS NOT NULL
+        AND cv_source.value <> '';
+
+    GET DIAGNOSTICS updated_count = ROW_COUNT;
+
+    -- Summary
+    total_changed := inserted_count + updated_count;
+
+    RAISE NOTICE 'Sync complete:';
+    RAISE NOTICE '- Inserted: % new custom field values', inserted_count;
+    RAISE NOTICE '- Updated: % existing custom field values', updated_count;
+    RAISE NOTICE '- Total Issues Affected: %', total_changed;
+
+END $$;
+
+sql
+Copy
+Edit
+===========================================================================
+ QUERY 3: COPY CUSTOM FIELD VALUES TO BUILT-IN start_date / due_date
+===========================================================================
+
+Description:
+- Update start_date from Planned Start Date CF (e.g., ID 129)
+- Update due_date from Planned End Date CF (e.g., ID 130)
+
+----------------------------------------------------------------------------
+
+DO $$
+DECLARE
+    planned_start_cf_id INT := 129; -- Planned Start Date CF
+    planned_end_cf_id INT := 130;   -- Planned End Date CF
+
+    updated_start INT := 0;
+    updated_due INT := 0;
+    total_updated_issues INT := 0;
+BEGIN
+
+    RAISE NOTICE 'Starting sync of Planned Dates to built-in fields';
+
+    -- STEP 1: Update start_date
+    UPDATE public.issues i
+    SET start_date = cv_start.value::date
+    FROM public.custom_values cv_start
+    WHERE
+        cv_start.customized_type = 'Issue'
+        AND cv_start.customized_id = i.id
+        AND cv_start.custom_field_id = planned_start_cf_id
+        AND cv_start.value IS NOT NULL
+        AND cv_start.value <> '';
+
+    GET DIAGNOSTICS updated_start = ROW_COUNT;
+
+    -- STEP 2: Update due_date
+    UPDATE public.issues i
+    SET due_date = cv_end.value::date
+    FROM public.custom_values cv_end
+    WHERE
+        cv_end.customized_type = 'Issue'
+        AND cv_end.customized_id = i.id
+        AND cv_end.custom_field_id = planned_end_cf_id
+        AND cv_end.value IS NOT NULL
+        AND cv_end.value <> '';
+
+    GET DIAGNOSTICS updated_due = ROW_COUNT;
+
+    total_updated_issues := updated_start + updated_due;
+
+    -- Summary
+    RAISE NOTICE 'Sync complete:';
+    RAISE NOTICE '- start_date updated for: % issues', updated_start;
+    RAISE NOTICE '- due_date updated for: % issues', updated_due;
+    RAISE NOTICE '- Total field updates (can include same issues twice): %', total_updated_issues;
+
+END $$;
+
+===========================================================================
+ QUERY 4: FIND ISSUES THAT BELONG TO A SPECIFIC VERSION (BY VERSION ID)
+===========================================================================
+
+Description:
+- Returns the number of issues that are linked to a specific version ID (e.g., 800) and already have a custom value entry (e.g., CV ID 167).
+
+----------------------------------------------------------------------------
+
+SELECT COUNT(*)
+FROM custom_values AS cv
+JOIN issues AS i
+  ON i.id = cv.customized_id
+WHERE i.id = 800
+  AND cv.id = 167;
+
+sql
+Copy
+Edit
+===========================================================================
+ QUERY 5: UPSERT CUSTOM FIELD VALUES FOR ISSUES IN A SPECIFIC VERSION
+===========================================================================
+
+Description:
+- Updates existing `custom_values` for a given version
+- Inserts missing `custom_values` for the same version
+- Assigns a specific value (e.g., "Sprint - Sep V2 2024")
+  to custom field ID 161 for all issues under version ID 800
+
+----------------------------------------------------------------------------
+
+BEGIN;
+
+-- STEP 1: UPDATE existing entries
+UPDATE custom_values
+SET value = 'Sprint - Sep V2 2024'
+WHERE custom_field_id = 161
+  AND customized_type = 'Issue'
+  AND customized_id IN (
+      SELECT id FROM issues WHERE fixed_version_id = 800
+  );
+
+-- STEP 2: INSERT missing entries
+INSERT INTO custom_values (customized_id, customized_type, custom_field_id, value)
+SELECT
+    i.id,
+    'Issue',
+    161,
+    'Sprint - Sep V2 2024'
+FROM issues i
+WHERE i.fixed_version_id = 800
+  AND NOT EXISTS (
+      SELECT 1
+      FROM custom_values cv
+      WHERE cv.customized_id = i.id
+        AND cv.customized_type = 'Issue'
+        AND cv.custom_field_id = 161
+  );
+
+COMMIT;
