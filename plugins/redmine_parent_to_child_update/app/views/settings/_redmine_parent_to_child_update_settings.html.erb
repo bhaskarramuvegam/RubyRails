@@ -1,0 +1,66 @@
+<%- @settings ||= {} %>
+<div class="box">
+  <h3>Plugin Settings</h3>
+
+  <div class="setting">
+    <label for="settings_enabled">
+      <%= check_box_tag('settings[enabled]', '1', @settings['enabled'] == '1') %>
+      Enable Parent to Child Update Plugin
+    </label>
+  </div>
+
+  <div class="setting">
+    <label for="settings_enable_logging">
+      <%= check_box_tag('settings[enable_logging]', '1', @settings['enable_logging'] == '1') %>
+      Enable Debug Logging
+    </label>
+  </div>
+
+  <div class="setting">
+    <label for="settings_auto_replicate_fields">
+      <%= check_box_tag('settings[auto_replicate_fields]', '1', @settings['auto_replicate_fields'] == '1') %>
+      Automatically Replicate Parent Fields to Child
+    </label>
+  </div>
+
+  <div class="setting">
+    <label for="settings_parent_issue_types">
+      Parent Issue Types (comma-separated)
+    </label>
+    <%= text_field_tag('settings[parent_issue_types]', @settings['parent_issue_types'] || 'Bug,Feature,Task,Support', size: 50) %>
+    <em>Only these issue types will trigger the child creation dialog</em>
+  </div>
+
+  <div class="setting">
+    <label for="settings_replicated_fields">
+      Fields Replicated to Child Issue (comma-separated)
+    </label>
+    <%= text_area_tag('settings[replicated_fields]', @settings['replicated_fields'] || 'priority,assigned_to,category,fixed_version,description,due_date,start_date,estimated_hours,custom_fields', rows: 4, cols: 70) %>
+    <p class="desc">
+      Use these field names: <code>priority, assigned_to, category, fixed_version, description, due_date, start_date, estimated_hours, custom_fields</code>.
+      Required fields from the parent issue will be appended automatically when enabled.
+    </p>
+  </div>
+
+  <div class="setting">
+    <label for="settings_append_required_fields">
+      <%= check_box_tag('settings[append_required_fields]', '1', @settings['append_required_fields'] != '0') %>
+      Append required fields from parent issue
+    </label>
+  </div>
+
+  <div class="setting">
+    <label for="settings_create_additional_children">
+      <%= check_box_tag('settings[create_additional_children]', '1', @settings['create_additional_children'] != '0') %>
+      Enable creation of additional child issues (Development Task, Testing Task)
+    </label>
+  </div>
+
+  <div class="setting">
+    <label for="settings_additional_child_trackers">
+      Additional Child Trackers (comma-separated)
+    </label>
+    <%= text_field_tag('settings[additional_child_trackers]', @settings['additional_child_trackers'] || 'Development Task,Testing Task', size: 50) %>
+    <em>These tracker names will be offered as additional tasks to create alongside the primary child.</em>
+  </div>
+</div>

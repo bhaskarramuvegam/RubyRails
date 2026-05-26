@@ -1,0 +1,30 @@
+# Redmine Parent to Child Update Plugin
+# This plugin asks user if they want to create a child issue when creating a parent issue
+# If yes, it replicates all parent fields to the child issue
+# This applies recursively for sub-child creation
+
+require File.expand_path('../lib/redmine_parent_to_child_update/issue_patch', __FILE__)
+require File.expand_path('../lib/redmine_parent_to_child_update/hooks', __FILE__)
+require_dependency 'issue'
+
+Issue.send(:include, RedmineParentToChildUpdate::IssuePatch)
+
+Redmine::Plugin.register :redmine_parent_to_child_update do
+  name 'Parent to Child Update Plugin'
+  author 'Development Team'
+  description 'Automatically ask users to create child issues when creating parent issues with field replication'
+  version '1.0.0'
+  url 'http://example.com/plugin'
+  author_url 'http://example.com/author'
+  
+  settings default: {
+    'enabled' => '1',
+    'enable_logging' => '1',
+    'auto_replicate_fields' => '1',
+    'parent_issue_types' => 'Change Request,CR,Bug,Feature,Task,Support',
+    'replicated_fields' => 'priority,assigned_to,category,fixed_version,description,due_date,start_date,estimated_hours,custom_fields',
+    'append_required_fields' => '1',
+    'create_additional_children' => '1',
+    'additional_child_trackers' => 'Development Task,Testing Task'
+  }, partial: 'settings/redmine_parent_to_child_update_settings'
+end

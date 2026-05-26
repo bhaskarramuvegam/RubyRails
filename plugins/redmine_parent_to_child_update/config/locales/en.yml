@@ -1,0 +1,35 @@
+en:
+  redmine_parent_to_child_update:
+    plugin_name: 'Parent to Child Update'
+    settings_title: 'Parent to Child Update Plugin Settings'
+    enabled: 'Enable Plugin'
+    enable_logging: 'Enable Debug Logging'
+    auto_replicate_fields: 'Auto Replicate Fields'
+    parent_issue_types: 'Parent Issue Types'
+    
+    dialog:
+      title: 'Create Child Issue'
+      description: 'Would you like to create a child issue (e.g., User Story) for this issue?'
+      info: 'If yes, the child issue will inherit all relevant fields from the parent issue.'
+      select_type: 'Select the type of child issue to create:'
+      subject_label: 'Child Issue Subject:'
+      subject_placeholder: 'Enter subject for child issue'
+      yes_button: 'Yes, Create Child'
+      no_button: 'No, Create Only'
+      create_button: 'Create'
+      cancel_button: 'Cancel'
+      
+    messages:
+      child_created: 'Child issue %{id} has been created with replicated fields.'
+      error_creating_child: 'Error creating child issue: %{error}'
+      invalid_parameters: 'Invalid parameters provided.'
+      
+    fields:
+      priority: 'Priority'
+      assigned_to: 'Assigned To'
+      category: 'Category'
+      fixed_version: 'Target Version'
+      description: 'Description'
+      due_date: 'Due Date'
+      start_date: 'Start Date'
+      estimated_hours: 'Estimated Hours'

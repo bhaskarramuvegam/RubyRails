@@ -1,0 +1,171 @@
+= Redmine Parent to Child Update Plugin
+
+This plugin provides automatic parent-to-child issue field replication in Redmine with an interactive popup dialog.
+
+== Description
+
+When creating a new issue in Redmine that matches the configured parent issue types (e.g., Bug, Feature, Task), the plugin displays an interactive popup dialog asking:
+
+"Would you like to create a child issue for this [IssueType]?"
+
+* If the user selects "Yes, Create Child": 
+  - Another dialog appears to select the child issue type (e.g., User Story)
+  - Enter a subject for the child issue
+  - Optional additional child tasks can be selected (for example Development Task and Testing Task)
+  - The child issue and any additional selected tasks are created with all relevant parent fields replicated
+  - This applies recursively - when creating children of the child, the dialog appears again
+
+* If the user selects "No":
+  - Only the parent issue is created
+  - No child issue is created
+
+== Features
+
+* Interactive popup dialog for child creation
+* Automatic field replication from parent to child
+* Recursive application for sub-child creation
+* Configurable parent issue types
+* Debug logging for troubleshooting
+* RESTful API endpoints for programmatic child creation
+
+== Installation
+
+1. Download/clone the plugin to your Redmine plugins directory:
+   cd redmine/plugins
+   git clone <repository-url> redmine_parent_to_child_update
+
+2. Install dependencies (if any):
+   cd redmine
+   bundle install
+
+3. Run plugin migrations (if any):
+   rake redmine:plugins:migrate PLUGIN=redmine_parent_to_child_update
+
+4. Restart Redmine
+
+5. Enable the plugin in Redmine administration:
+   - Go to Administration > Plugins
+   - Find "Parent to Child Update Plugin"
+   - Configure settings as needed
+
+== Configuration
+
+Go to Administration > Plugins > Parent to Child Update Plugin Settings
+
+* Enable Plugin: Toggle plugin on/off
+* Enable Debug Logging: Log all operations for debugging
+* Auto Replicate Fields: Automatically replicate parent fields to child
+* Parent Issue Types: Comma-separated list of issue types that trigger the dialog
+  (default: Bug,Feature,Task,Support)
+* Additional Child Trackers: Comma-separated list of tracker names to offer as extra child tasks
+  (default: Development Task,Testing Task)
+
+== Field Replication
+
+The following fields are automatically replicated from parent to child:
+
+* Priority
+* Assigned To
+* Category  
+* Target Version
+* Description (with parent issue reference added)
+* Due Date
+* Start Date
+* Estimated Hours
+* Custom Fields (if any)
+
+The child issue automatically inherits the parent-child relationship.
+
+== Usage
+
+=== Creating Parent Issues with Child
+
+1. Create a new issue with a type in the configured parent issue types list
+2. After filling in the issue details, submit the form
+3. A popup dialog appears asking if you want to create a child issue
+4. Click "Yes, Create Child" to proceed with child creation
+5. Select the child issue type from the dropdown
+6. Enter the child issue subject
+7. Optionally select additional child task types configured in the plugin settings
+8. Click "Create" to create the child issue and any additional child tasks with replicated fields
+9. Alternatively, click "No, Create [IssueType] Only" to create only the parent
+
+=== Creating Additional Child Tasks
+
+When enabled in plugin settings, configured additional trackers such as Development Task and Testing Task are shown in the child creation dialog. Selecting one or more of these options creates those additional child issues alongside the primary child issue, each inheriting the parent issue's replicated fields.
+
+=== Creating Sub-Child Issues
+
+When creating a new issue that is itself a child issue (i.e., has a parent), if that child issue type matches the configured parent issue types, the same dialog will appear, allowing recursive creation of sub-child issues.
+
+=== Using the API
+
+You can also create child issues programmatically:
+
+==== Get Available Trackers for Child
+  GET /redmine_parent_to_child_update/child_issues/trackers/:issue_id
+
+==== Create Child Issue
+  POST /redmine_parent_to_child_update/child_issues/create/:issue_id
+  
+  Parameters:
+  - tracker_id: ID of the child tracker
+  - subject: Subject for the child issue
+  - description: (optional) Description for the child issue
+
+==== List Child Issues
+  GET /redmine_parent_to_child_update/child_issues/children/:issue_id
+
+== Debug Logging
+
+When debug logging is enabled, the plugin logs all operations to the Rails log file (log/production.log or development.log):
+
+  Parent to Child: Creating child issue for parent #123
+  Parent to Child: Replicating fields from parent issue #123 to child
+    Field priority_id: 2
+    Field assigned_to_id: 5
+    Field category_id: 3
+    ...
+  Parent to Child: Successfully created child issue #124
+
+Look for lines starting with "Parent to Child:" to track plugin activity.
+
+== Error Handling
+
+The plugin includes comprehensive error handling:
+
+* Invalid parameters are rejected with appropriate error messages
+* Field replication errors are logged but don't prevent child creation
+* Database errors are caught and logged
+* API errors return proper HTTP status codes
+
+== Permissions
+
+Users need the following permissions to use this plugin:
+
+* View Issues (to see the parent issue)
+* Add Issues (to create child issues)
+
+These permissions are checked before allowing child creation.
+
+== Compatibility
+
+* Redmine 3.0+
+* Ruby 2.0+
+* Tested with Redmine 4.x and 5.x
+
+== Support
+
+For issues, feature requests, or questions:
+
+1. Check the debug logs for error details
+2. Enable debug logging in plugin settings
+3. Review the error messages in the Rails log
+
+== License
+
+This plugin is licensed under the MIT License.
+
+== Author
+
+Development Team
