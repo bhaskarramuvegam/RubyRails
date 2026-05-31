@@ -29,29 +29,88 @@ module RedmineParentToChildUpdate
       output << "</style>"
 
       # Add the modal HTML
-      output << "<div id='childCreationModal' class='child-creation-modal'>"
-      output << "  <div class='child-creation-content'>"
-      output << "    <h3>Create Child Issue</h3>"
-      output << "    <p>Would you like to create a child issue (e.g., User Story) for this #{issue.tracker.name}?</p>"
-      output << "    <p>If yes, the child issue will inherit all relevant fields from the parent issue.</p>"
-      output << "    <div class='child-creation-buttons'>"
-      output << "      <button type='button' class='yes-btn' onclick='handleChildCreation(true)'>Yes, Create Child</button>"
-      output << "      <button type='button' class='no-btn' onclick='handleChildCreation(false)'>No, Create #{issue.tracker.name} Only</button>"
-      output << "    </div>"
-      output << "  </div>"
-      output << "</div>"
+      if issue.should_show_child_popup?
+        output << "<div id='childCreationModal' class='child-creation-modal'>"
+        output << "  <div class='child-creation-content'>"
+        output << "    <h3>Create Child Issue</h3>"
+        output << "    <p>Would you like to create a child issue (e.g., User Story) for this #{issue.tracker.name}?<\/p>"
+        output << "    <p>If yes, the child issue will inherit all relevant fields from the parent issue.</p>"
+        output << "    <div class='child-creation-buttons'>"
+        output << "      <button type='button' class='yes-btn' onclick='handleChildCreation(true)'>Yes, Create Child</button>"
+        output << "      <button type='button' class='no-btn' onclick='handleChildCreation(false)'>No, Create #{issue.tracker.name} Only</button>"
+        output << "    </div>"
+        output << "  </div>"
+        output << "</div>"
+      end
+
+      if issue.should_show_additional_child_popup?
+        output << "<div id='additionalChildModal' class='child-creation-modal'>"
+        output << "  <div class='child-creation-content'>"
+        output << "    <h3>Create Additional Child Issues</h3>"
+        output << "    <p>Would you like to create additional child issues for this User Story? These tasks will be created under the new User Story.</p>"
+        if issue.additional_child_trackers.any?
+          output << "    <div style='margin:12px 0;'>"
+          output << "      <label>Select additional task types:</label>"
+          issue.additional_child_trackers.each do |t|
+            output << "      <div style='margin-top:5px;'><label><input type='checkbox' class='additional-only-child-tracker' value='#{t.id}'> #{t.name}</label></div>"
+          end
+          output << "    </div>"
+        end
+        output << "    <div class='child-creation-buttons'>"
+        output << "      <button type='button' class='yes-btn' onclick='createAdditionalTasks()'>Create Additional Tasks</button>"
+        output << "      <button type='button' class='no-btn' onclick='cancelAdditionalCreation()'>No</button>"
+        output << "    </div>"
+        output << "  </div>"
+        output << "</div>"
+      end
 
       # Add JavaScript to handle the dialog
       output << "<script type='text/javascript'>"
       output << "var shouldCreateChild = null;"
       output << "var showChildDialog = #{issue.should_show_child_popup?.to_s.downcase};"
+      output << "var showAdditionalDialog = #{issue.should_show_additional_child_popup?.to_s.downcase};"
       output << ""
       output << "function handleChildCreation(createChild) {"
       output << "  shouldCreateChild = createChild;"
-      output << "  document.getElementById('childCreationModal').style.display = 'none';"
+      output << "  var modal = document.getElementById('childCreationModal');"
+      output << "  if (modal) { modal.style.display = 'none'; modal.parentNode && modal.parentNode.removeChild(modal); }"
+      output << "  showChildDialog = false;"
       output << "  if (createChild) {"
       output << "    showChildCreationForm();"
       output << "  }"
+      output << "}"
+      output << ""
+      output << "function createAdditionalTasks() {"
+      output << "  shouldCreateChild = false;"
+      output << "  var modal = document.getElementById('additionalChildModal');"
+      output << "  if (modal) { modal.style.display = 'none'; modal.parentNode && modal.parentNode.removeChild(modal); }"
+      output << "  showAdditionalDialog = false;"
+      output << "  var form = document.querySelector('form.edit_issue, form#issue-form, form.new_issue, form[action*=\'/issues\']');"
+      output << "  if (!form) {"
+      output << "    alert('Unable to locate the issue form. Additional task creation cannot continue.');"
+      output << "    return;"
+      output << "  }"
+      output << "  var additionalInput = document.createElement('input');"
+      output << "  additionalInput.type = 'hidden';"
+      output << "  additionalInput.name = 'create_additional_tasks';"
+      output << "  additionalInput.value = 'true';"
+      output << "  form.appendChild(additionalInput);"
+      output << "  var checkboxInputs = document.querySelectorAll('.additional-only-child-tracker:checked');"
+      output << "  checkboxInputs.forEach(function(checkbox) {"
+      output << "    var idInput = document.createElement('input');"
+      output << "    idInput.type = 'hidden';"
+      output << "    idInput.name = 'additional_child_tracker_ids[]';"
+      output << "    idInput.value = checkbox.value;"
+      output << "    form.appendChild(idInput);"
+      output << "  });"
+      output << "  form.submit();"
+      output << "}"
+      output << ""
+      output << "function cancelAdditionalCreation() {"
+      output << "  var modal = document.getElementById('additionalChildModal');"
+      output << "  if (modal) { modal.style.display = 'none'; modal.parentNode && modal.parentNode.removeChild(modal); }"
+      output << "  shouldCreateChild = false;"
+      output << "  showAdditionalDialog = false;"
       output << "}"
       output << ""
       output << "function showChildCreationForm() {"
@@ -77,7 +136,7 @@ module RedmineParentToChildUpdate
       output << "  html += '</select>';"
       output << "  html += '<div style=\"margin: 15px 0;\">';"
       output << "  html += '<label>Child Issue Subject:</label>';"
-      output << "  html += '<input type=\"text\" id=\"childSubject\" placeholder=\"Enter subject for child issue\" style=\"width: 100%; padding: 8px; font-size: 14px; margin-top: 5px;\">';"
+      output << "  html += '<input type=\"text\" id=\"childSubject\" placeholder=\"Enter subject for child issue\" value=\"#{issue.subject.to_s.gsub('"', '&quot;')}\" style=\"width: 100%; padding: 8px; font-size: 14px; margin-top: 5px;\">';"
       output << "  html += '</div>';"
       output << "  if (additionalTrackers.length) {"
       output << "    html += '<div style=\"margin: 15px 0;\">';"
@@ -109,54 +168,58 @@ module RedmineParentToChildUpdate
       output << "    return;"
       output << "  }"
       output << "  var input = document.createElement('input');"
-      output << "    input.type = 'hidden';"
-      output << "    input.name = 'create_child';"
-      output << "    input.value = 'true';"
-      output << "    form.appendChild(input);"
-      output << ""
-      output << "    var trackerInput = document.createElement('input');"
-      output << "    trackerInput.type = 'hidden';"
-      output << "    trackerInput.name = 'child_tracker_id';"
-      output << "    trackerInput.value = tracker;"
-      output << "    form.appendChild(trackerInput);"
-      output << ""
-      output << "    var subjectInput = document.createElement('input');"
-      output << "    subjectInput.type = 'hidden';"
-      output << "    subjectInput.name = 'child_subject';"
-      output << "    subjectInput.value = subject;"
-      output << "    form.appendChild(subjectInput);"
-      output << ""
-      output << "    var additionalCheckboxes = document.querySelectorAll('.additional-child-tracker:checked');"
-      output << "    additionalCheckboxes.forEach(function(checkbox) {"
-      output << "      var additionalInput = document.createElement('input');"
-      output << "      additionalInput.type = 'hidden';"
-      output << "      additionalInput.name = 'additional_child_tracker_ids[]';"
-      output << "      additionalInput.value = checkbox.value;"
-      output << "      form.appendChild(additionalInput);"
-      output << "    });"
-      output << "  }"
+      output << "  input.type = 'hidden';"
+      output << "  input.name = 'create_child';"
+      output << "  input.value = 'true';"
+      output << "  form.appendChild(input);"
+      output << "  var trackerInput = document.createElement('input');"
+      output << "  trackerInput.type = 'hidden';"
+      output << "  trackerInput.name = 'child_tracker_id';"
+      output << "  trackerInput.value = tracker;"
+      output << "  form.appendChild(trackerInput);"
+      output << "  var subjectInput = document.createElement('input');"
+      output << "  subjectInput.type = 'hidden';"
+      output << "  subjectInput.name = 'child_subject';"
+      output << "  subjectInput.value = subject;"
+      output << "  form.appendChild(subjectInput);"
+      output << "  var additionalCheckboxes = document.querySelectorAll('.additional-child-tracker:checked');"
+      output << "  additionalCheckboxes.forEach(function(checkbox) {"
+      output << "    var additionalInput = document.createElement('input');"
+      output << "    additionalInput.type = 'hidden';"
+      output << "    additionalInput.name = 'additional_child_tracker_ids[]';"
+      output << "    additionalInput.value = checkbox.value;"
+      output << "    form.appendChild(additionalInput);"
+      output << "  });"
       output << "  form.submit();"
       output << "}"
       output << ""
       output << "function cancelChildCreation() {"
-      output << "  document.getElementById('childDetailsModal').remove();"
+      output << "  var modal = document.getElementById('childDetailsModal');"
+      output << "  if (modal) { modal.parentNode && modal.parentNode.removeChild(modal); }"
       output << "  shouldCreateChild = false;"
+      output << "  showChildDialog = false;"
       output << "}"
       output << ""
       output << "document.addEventListener('DOMContentLoaded', function() {"
       output << "  if (showChildDialog) {"
       output << "    document.getElementById('childCreationModal').style.display = 'block';"
+      output << "  } else if (showAdditionalDialog) {"
+      output << "    document.getElementById('additionalChildModal').style.display = 'block';"
       output << "  }"
       output << "});"
       output << ""
       output << "// Prevent form submission until dialog is handled"
       output << "document.addEventListener('DOMContentLoaded', function() {"
-      output << "  var form = document.querySelector('form.edit_issue');"
-      output << "  if (form && showChildDialog) {"
+      output << "  var form = document.querySelector('form.edit_issue, form#issue-form, form.new_issue, form[action*=\'/issues\']');"
+      output << "  if (form && (showChildDialog || showAdditionalDialog)) {"
       output << "    form.addEventListener('submit', function(e) {"
       output << "      if (shouldCreateChild === null) {"
       output << "        e.preventDefault();"
-      output << "        document.getElementById('childCreationModal').style.display = 'block';"
+      output << "        if (showChildDialog) {"
+      output << "          document.getElementById('childCreationModal').style.display = 'block';"
+      output << "        } else if (showAdditionalDialog) {"
+      output << "          document.getElementById('additionalChildModal').style.display = 'block';"
+      output << "        }"
       output << "        return false;"
       output << "      }"
       output << "    });"
@@ -206,7 +269,6 @@ module RedmineParentToChildUpdate
           else
             Rails.logger.error("Parent to Child: Error creating child issue: #{child_issue.errors.full_messages.join(', ')}") if debug_logging
           end
-
           additional_ids = Array(params[:additional_child_tracker_ids]).map(&:to_i).select { |value| value > 0 }
           additional_ids.each do |additional_id|
             next if additional_id == tracker.id
@@ -229,8 +291,94 @@ module RedmineParentToChildUpdate
               Rails.logger.error("Parent to Child: Error creating additional child issue: #{additional_child.errors.full_messages.join(', ')}") if debug_logging
             end
           end
+          # Optionally create Development & Testing under the newly created child
+          if Setting.plugin_redmine_parent_to_child_update['create_dev_test_tasks'] == '1'
+            dev_cat = Category.find_by(name: 'Development', project_id: issue.project.id) || Category.find_by(name: 'Development')
+            test_cat = Category.find_by(name: 'Testing', project_id: issue.project.id) || Category.find_by(name: 'Testing')
+            {'Development' => dev_cat, 'Testing' => test_cat}.each do |label, cat|
+              begin
+                auto_child = Issue.new(
+                  project: issue.project,
+                  tracker: tracker,
+                  subject: "#{child_subject} - #{label}",
+                  description: child_issue.description,
+                  status: (IssueStatus.respond_to?(:default) ? IssueStatus.default : (begin; IssueStatus.find_by(is_default: true); rescue ActiveRecord::StatementInvalid; nil; end) || IssueStatus.first),
+                  priority: issue.priority,
+                  author_id: issue.author_id,
+                  parent_id: child_issue.id,
+                  category_id: (cat && cat.id)
+                )
+                auto_child.replicate_fields_from_parent(issue)
+                auto_child.category_id = cat.id if cat
+                if auto_child.save
+                  Rails.logger.info("Parent to Child: Successfully created auto child #{label} ##{auto_child.id}") if debug_logging
+                else
+                  Rails.logger.error("Parent to Child: Error creating auto child #{label}: #{auto_child.errors.full_messages.join(', ')}") if debug_logging
+                end
+              rescue => e
+                Rails.logger.error("Parent to Child: Exception creating auto child #{label}: #{e.message}")
+              end
+            end
+          end
         rescue => e
           Rails.logger.error("Parent to Child: Error in child creation: #{e.message}")
+          Rails.logger.error(e.backtrace.join("\n"))
+        end
+      elsif params[:create_additional_tasks] == 'true'
+        begin
+          additional_ids = Array(params[:additional_child_tracker_ids]).map(&:to_i).select { |value| value > 0 }
+          additional_ids.each do |additional_id|
+            next unless issue.project.trackers.exists?(id: additional_id)
+
+            additional_tracker = Tracker.find(additional_id)
+            additional_child = Issue.new(
+              project: issue.project,
+              tracker: additional_tracker,
+              subject: "#{issue.subject} - #{additional_tracker.name}",
+              status: (IssueStatus.respond_to?(:default) ? IssueStatus.default : (begin; IssueStatus.find_by(is_default: true); rescue ActiveRecord::StatementInvalid; nil; end) || IssueStatus.first),
+              priority: issue.priority,
+              author_id: issue.author_id,
+              parent_id: issue.id
+            )
+            additional_child.replicate_fields_from_parent(issue)
+            if additional_child.save
+              Rails.logger.info("Parent to Child: Successfully created additional child issue ##{additional_child.id}") if debug_logging
+            else
+              Rails.logger.error("Parent to Child: Error creating additional child issue: #{additional_child.errors.full_messages.join(', ')}") if debug_logging
+            end
+          end
+
+          if Setting.plugin_redmine_parent_to_child_update['create_dev_test_tasks'] == '1'
+            dev_cat = Category.find_by(name: 'Development', project_id: issue.project.id) || Category.find_by(name: 'Development')
+            test_cat = Category.find_by(name: 'Testing', project_id: issue.project.id) || Category.find_by(name: 'Testing')
+            {'Development' => dev_cat, 'Testing' => test_cat}.each do |label, cat|
+              begin
+                next if additional_ids.include?(Tracker.find_by(name: label)&.id)
+                auto_child = Issue.new(
+                  project: issue.project,
+                  tracker: Tracker.find_by(name: label) || issue.tracker,
+                  subject: "#{issue.subject} - #{label}",
+                  description: issue.description,
+                  status: (IssueStatus.respond_to?(:default) ? IssueStatus.default : (begin; IssueStatus.find_by(is_default: true); rescue ActiveRecord::StatementInvalid; nil; end) || IssueStatus.first),
+                  priority: issue.priority,
+                  author_id: issue.author_id,
+                  parent_id: issue.id,
+                  category_id: (cat && cat.id)
+                )
+                auto_child.replicate_fields_from_parent(issue)
+                auto_child.category_id = cat.id if cat
+                if auto_child.save
+                  Rails.logger.info("Parent to Child: Successfully created auto child #{label} ##{auto_child.id}") if debug_logging
+                else
+                  Rails.logger.error("Parent to Child: Error creating auto child #{label}: #{auto_child.errors.full_messages.join(', ')}") if debug_logging
+                end
+              rescue => e
+                Rails.logger.error("Parent to Child: Exception creating auto child #{label}: #{e.message}")
+              end
+            end
+          end
+        rescue => e
+          Rails.logger.error("Parent to Child: Error in additional task creation: #{e.message}")
           Rails.logger.error(e.backtrace.join("\n"))
         end
       else
@@ -286,7 +434,7 @@ module RedmineParentToChildUpdate
       output << "    </div>"
       output << "    <div style='margin:12px 0;'>"
       output << "      <label>Child subject:</label>"
-      output << "      <input type='text' id='childSubjectShow' style='width:100%; padding:8px; margin-top:6px;' placeholder='Child subject'>"
+      output << "      <input type='text' id='childSubjectShow' style='width:100%; padding:8px; margin-top:6px;' placeholder='Child subject' value='#{issue.subject.to_s.gsub("'", '&#39;')}'>"
       output << "    </div>"
       if issue.additional_child_trackers.any?
         output << "    <div style='margin:12px 0;'>"
@@ -298,7 +446,7 @@ module RedmineParentToChildUpdate
       end
       output << "    <div class='child-creation-buttons'>"
       output << "      <button type='button' class='yes-btn' onclick='createChildFromShow(#{issue.id})'>Yes, Create Child</button>"
-      output << "      <button type='button' class='no-btn' onclick='document.getElementById(\'childCreationModalShow\').style.display=\'none\''>No</button>"
+      output << "      <button type='button' class='no-btn' onclick='document.getElementById(\"childCreationModalShow\").style.display = \"none\";'>No</button>"
       output << "    </div>"
       output << "  </div>"
       output << "</div>"

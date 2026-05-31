@@ -137,13 +137,25 @@ module RedmineParentToChildUpdate
         end
       end
 
-      # Check if this issue should trigger the child creation popup
+      # Check if this issue should trigger the primary child creation popup
       def should_show_child_popup?
         return false unless parent_child_update_enabled?
         return false if parent_id.present? # This is already a child
         return false unless new_record? # Only on creation
-        
-        parent_issue_types.include?(tracker&.name)
+        return false unless tracker
+        return false if tracker.name == 'User Story'  # User Story gets additional-only popup
+
+        tracker.name == 'Change Request'  # Only Change Request gets primary popup
+      end
+
+      # Check if this issue should trigger the additional-task-only popup
+      def should_show_additional_child_popup?
+        return false unless parent_child_update_enabled?
+        return false if parent_id.present?
+        return false unless new_record?
+        return false unless tracker&.name == 'User Story'
+
+        create_dev_test_tasks? || additional_child_trackers.any?
       end
 
       # Get available issue types for child creation
@@ -155,6 +167,10 @@ module RedmineParentToChildUpdate
 
       def create_additional_children_enabled?
         Setting.plugin_redmine_parent_to_child_update['create_additional_children'] == '1'
+      end
+
+      def create_dev_test_tasks?
+        Setting.plugin_redmine_parent_to_child_update['create_dev_test_tasks'] == '1'
       end
 
       def additional_child_tracker_names

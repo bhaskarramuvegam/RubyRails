@@ -59,6 +59,8 @@ Go to Administration > Plugins > Parent to Child Update Plugin Settings
   (default: Bug,Feature,Task,Support)
 * Additional Child Trackers: Comma-separated list of tracker names to offer as extra child tasks
   (default: Development Task,Testing Task)
+* Auto-create Dev/Test Tasks: When enabled, the plugin will automatically create two additional child issues
+  under the newly created primary child with categories 'Development' and 'Testing' (if those categories exist).
 
 == Field Replication
 

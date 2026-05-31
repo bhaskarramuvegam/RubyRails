@@ -55,6 +55,39 @@ module RedmineParentToChildUpdate
           return render json: { error: primary_child.errors.full_messages.join(', ') }, status: :unprocessable_entity
         end
 
+        # Optionally create Development and Testing tasks under the primary child
+        if Setting.plugin_redmine_parent_to_child_update['create_dev_test_tasks'] == '1'
+          dev_cat = Category.find_by(name: 'Development', project_id: @issue.project.id) || Category.find_by(name: 'Development')
+          test_cat = Category.find_by(name: 'Testing', project_id: @issue.project.id) || Category.find_by(name: 'Testing')
+
+          ['Development', 'Testing'].each do |label|
+            begin
+              cat = (label == 'Development') ? dev_cat : test_cat
+              child = Issue.new(
+                project: @issue.project,
+                tracker: tracker,
+                subject: "#{subject} - #{label}",
+                description: description,
+                status: (IssueStatus.respond_to?(:default) ? IssueStatus.default : (begin; IssueStatus.find_by(is_default: true); rescue ActiveRecord::StatementInvalid; nil; end) || IssueStatus.first),
+                priority: @issue.priority,
+                author_id: @issue.author_id,
+                parent_id: primary_child.id,
+                category_id: (cat && cat.id)
+              )
+              child.replicate_fields_from_parent(@issue)
+              # override category if found
+              child.category_id = cat.id if cat
+              if child.save
+                created_children << child
+              else
+                Rails.logger.error("Error creating auto #{label} child: #{child.errors.full_messages.join(', ')}")
+              end
+            rescue => e
+              Rails.logger.error("Exception creating auto #{label} child: #{e.message}")
+            end
+          end
+        end
+
         additional_ids = Array(params[:additional_child_tracker_ids]).map(&:to_i).select { |id| id > 0 }
         additional_ids.each do |additional_id|
           next if additional_id == tracker.id

@@ -63,4 +63,10 @@
     <%= text_field_tag('settings[additional_child_trackers]', @settings['additional_child_trackers'] || 'Development Task,Testing Task', size: 50) %>
     <em>These tracker names will be offered as additional tasks to create alongside the primary child.</em>
   </div>
+  <div class="setting">
+    <label for="settings_create_dev_test_tasks">
+      <%= check_box_tag('settings[create_dev_test_tasks]', '1', @settings['create_dev_test_tasks'] == '1') %>
+      Automatically create Development and Testing child tasks under the new child
+    </label>
+  </div>
 </div>

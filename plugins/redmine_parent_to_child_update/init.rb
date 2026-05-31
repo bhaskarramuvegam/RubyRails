@@ -25,6 +25,7 @@ Redmine::Plugin.register :redmine_parent_to_child_update do
     'replicated_fields' => 'priority,assigned_to,category,fixed_version,description,due_date,start_date,estimated_hours,custom_fields',
     'append_required_fields' => '1',
     'create_additional_children' => '1',
-    'additional_child_trackers' => 'Development Task,Testing Task'
+    'additional_child_trackers' => 'Development Task,Testing Task',
+    'create_dev_test_tasks' => '0'
   }, partial: 'settings/redmine_parent_to_child_update_settings'
 end
