@@ -1,490 +1,289 @@
 # Redmine Parent to Child Update - Hooks
-# This module provides hooks to inject the child creation dialog into the issue creation flow
 
 module RedmineParentToChildUpdate
   class Hooks < Redmine::Hook::ViewListener
-    # Inject JavaScript and HTML for the child creation popup into the issue form
+
+    # ─── 1. NEW-ISSUE FORM ────────────────────────────────────────────────────
+    # We only inject the shared CSS here.  The blocking form-level popup has been
+    # removed because it was unreliable: the popup HTML was rendered based on the
+    # tracker selected at page-load time, so it never appeared when the user
+    # switched to a CR tracker after the form loaded.  All child-creation is now
+    # handled by the show-page popup (hook #3 below).
     def view_issues_form_details_bottom(context = {})
       issue = context[:issue]
-      form = context[:f]
-
       return unless issue.parent_child_update_enabled?
-      return if issue.parent_id.present? # Don't show for child issues
+      return if issue.parent_id.present?
 
-      output = +""
-      
-      # Add inline styles for modal
-      output << "<style type='text/css'>"
-      output << ".child-creation-modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); font-family: Arial, sans-serif; }"
-      output << ".child-creation-content { background-color: white; margin: 10% auto; padding: 20px; border: 1px solid #888; width: 500px; border-radius: 5px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }"
-      output << ".child-creation-content h3 { margin-top: 0; color: #333; }"
-      output << ".child-creation-content p { color: #666; line-height: 1.6; }"
-      output << ".child-creation-buttons { text-align: center; margin-top: 20px; }"
-      output << ".child-creation-buttons button { padding: 10px 20px; margin: 0 5px; font-size: 14px; border-radius: 3px; border: 1px solid #ccc; background-color: #f5f5f5; cursor: pointer; }"
-      output << ".child-creation-buttons button:hover { background-color: #e0e0e0; }"
-      output << ".child-creation-buttons button.yes-btn { background-color: #4CAF50; color: white; border-color: #45a049; }"
-      output << ".child-creation-buttons button.yes-btn:hover { background-color: #45a049; }"
-      output << ".child-creation-buttons button.no-btn { background-color: #f44336; color: white; border-color: #da190b; }"
-      output << ".child-creation-buttons button.no-btn:hover { background-color: #da190b; }"
-      output << "</style>"
-
-      # Add the modal HTML
-      if issue.should_show_child_popup?
-        output << "<div id='childCreationModal' class='child-creation-modal'>"
-        output << "  <div class='child-creation-content'>"
-        output << "    <h3>Create Child Issue</h3>"
-        output << "    <p>Would you like to create a child issue (e.g., User Story) for this #{issue.tracker.name}?<\/p>"
-        output << "    <p>If yes, the child issue will inherit all relevant fields from the parent issue.</p>"
-        output << "    <div class='child-creation-buttons'>"
-        output << "      <button type='button' class='yes-btn' onclick='handleChildCreation(true)'>Yes, Create Child</button>"
-        output << "      <button type='button' class='no-btn' onclick='handleChildCreation(false)'>No, Create #{issue.tracker.name} Only</button>"
-        output << "    </div>"
-        output << "  </div>"
-        output << "</div>"
-      end
-
-      if issue.should_show_additional_child_popup?
-        output << "<div id='additionalChildModal' class='child-creation-modal'>"
-        output << "  <div class='child-creation-content'>"
-        output << "    <h3>Create Additional Child Issues</h3>"
-        output << "    <p>Would you like to create additional child issues for this User Story? These tasks will be created under the new User Story.</p>"
-        if issue.additional_child_trackers.any?
-          output << "    <div style='margin:12px 0;'>"
-          output << "      <label>Select additional task types:</label>"
-          issue.additional_child_trackers.each do |t|
-            output << "      <div style='margin-top:5px;'><label><input type='checkbox' class='additional-only-child-tracker' value='#{t.id}'> #{t.name}</label></div>"
-          end
-          output << "    </div>"
-        end
-        output << "    <div class='child-creation-buttons'>"
-        output << "      <button type='button' class='yes-btn' onclick='createAdditionalTasks()'>Create Additional Tasks</button>"
-        output << "      <button type='button' class='no-btn' onclick='cancelAdditionalCreation()'>No</button>"
-        output << "    </div>"
-        output << "  </div>"
-        output << "</div>"
-      end
-
-      # Add JavaScript to handle the dialog
-      output << "<script type='text/javascript'>"
-      output << "var shouldCreateChild = null;"
-      output << "var showChildDialog = #{issue.should_show_child_popup?.to_s.downcase};"
-      output << "var showAdditionalDialog = #{issue.should_show_additional_child_popup?.to_s.downcase};"
-      output << ""
-      output << "function handleChildCreation(createChild) {"
-      output << "  shouldCreateChild = createChild;"
-      output << "  var modal = document.getElementById('childCreationModal');"
-      output << "  if (modal) { modal.style.display = 'none'; modal.parentNode && modal.parentNode.removeChild(modal); }"
-      output << "  showChildDialog = false;"
-      output << "  if (createChild) {"
-      output << "    showChildCreationForm();"
-      output << "  }"
-      output << "}"
-      output << ""
-      output << "function createAdditionalTasks() {"
-      output << "  shouldCreateChild = false;"
-      output << "  var modal = document.getElementById('additionalChildModal');"
-      output << "  if (modal) { modal.style.display = 'none'; modal.parentNode && modal.parentNode.removeChild(modal); }"
-      output << "  showAdditionalDialog = false;"
-      output << "  var form = document.querySelector('form.edit_issue, form#issue-form, form.new_issue, form[action*=\'/issues\']');"
-      output << "  if (!form) {"
-      output << "    alert('Unable to locate the issue form. Additional task creation cannot continue.');"
-      output << "    return;"
-      output << "  }"
-      output << "  var additionalInput = document.createElement('input');"
-      output << "  additionalInput.type = 'hidden';"
-      output << "  additionalInput.name = 'create_additional_tasks';"
-      output << "  additionalInput.value = 'true';"
-      output << "  form.appendChild(additionalInput);"
-      output << "  var checkboxInputs = document.querySelectorAll('.additional-only-child-tracker:checked');"
-      output << "  checkboxInputs.forEach(function(checkbox) {"
-      output << "    var idInput = document.createElement('input');"
-      output << "    idInput.type = 'hidden';"
-      output << "    idInput.name = 'additional_child_tracker_ids[]';"
-      output << "    idInput.value = checkbox.value;"
-      output << "    form.appendChild(idInput);"
-      output << "  });"
-      output << "  form.submit();"
-      output << "}"
-      output << ""
-      output << "function cancelAdditionalCreation() {"
-      output << "  var modal = document.getElementById('additionalChildModal');"
-      output << "  if (modal) { modal.style.display = 'none'; modal.parentNode && modal.parentNode.removeChild(modal); }"
-      output << "  shouldCreateChild = false;"
-      output << "  showAdditionalDialog = false;"
-      output << "}"
-      output << ""
-      output << "function showChildCreationForm() {"
-      output << "  var childModal = document.createElement('div');"
-      output << "  childModal.id = 'childDetailsModal';"
-      output << "  childModal.className = 'child-creation-modal';"
-      output << "  childModal.style.display = 'block';"
-      output << "  childModal.innerHTML = getChildFormHTML();"
-      output << "  document.body.appendChild(childModal);"
-      output << "}"
-      output << ""
-      output << "function getChildFormHTML() {"
-      output << "  var availableTrackers = #{issue.available_child_trackers.map { |t| { id: t.id, name: t.name } }.to_json};"
-      output << "  var additionalTrackers = #{issue.additional_child_trackers.map { |t| { id: t.id, name: t.name } }.to_json};"
-      output << "  var html = '<div class=\"child-creation-content\">';"
-      output << "  html += '<h3>Create Child Issue</h3>';"
-      output << "  html += '<p>Select the type of child issue to create:</p>';"
-      output << "  html += '<select id=\"childTracker\" style=\"width: 100%; padding: 8px; font-size: 14px; margin: 10px 0;\">';"
-      output << "  html += '<option value=\"\">-- Select Issue Type --</option>';"
-      output << "  availableTrackers.forEach(function(tracker) {"
-      output << "    html += '<option value=\"' + tracker.id + '\">' + tracker.name + '</option>';"
-      output << "  });"
-      output << "  html += '</select>';"
-      output << "  html += '<div style=\"margin: 15px 0;\">';"
-      output << "  html += '<label>Child Issue Subject:</label>';"
-      output << "  html += '<input type=\"text\" id=\"childSubject\" placeholder=\"Enter subject for child issue\" value=\"#{issue.subject.to_s.gsub('"', '&quot;')}\" style=\"width: 100%; padding: 8px; font-size: 14px; margin-top: 5px;\">';"
-      output << "  html += '</div>';"
-      output << "  if (additionalTrackers.length) {"
-      output << "    html += '<div style=\"margin: 15px 0;\">';"
-      output << "    html += '<label>Create additional child issues:</label>';"
-      output << "    additionalTrackers.forEach(function(tracker) {"
-      output << "      html += '<div style=\"margin-top: 5px;\"><label><input type=\"checkbox\" class=\"additional-child-tracker\" value=\"' + tracker.id + '\"> ' + tracker.name + '</label></div>';"
-      output << "    });"
-      output << "    html += '</div>';"
-      output << "  }"
-      output << "  html += '<div class=\"child-creation-buttons\">';"
-      output << "  html += '<button type=\"button\" class=\"yes-btn\" onclick=\"createChildIssue()\">Create</button>';"
-      output << "  html += '<button type=\"button\" class=\"no-btn\" onclick=\"cancelChildCreation()\">Cancel</button>';"
-      output << "  html += '</div>';"
-      output << "  html += '</div>';"
-      output << "  return html;"
-      output << "}"
-      output << ""
-      output << "function createChildIssue() {"
-      output << "  var tracker = document.getElementById('childTracker').value;"
-      output << "  var subject = document.getElementById('childSubject').value;"
-      output << "  if (!tracker || !subject) {"
-      output << "    alert('Please select an issue type and enter a subject');"
-      output << "    return;"
-      output << "  }"
-      output << "  document.getElementById('childDetailsModal').style.display = 'none';"
-      output << "  var form = document.querySelector('form.edit_issue, form#issue-form, form.new_issue, form[action*=\'/issues\']');"
-      output << "  if (!form) {"
-      output << "    alert('Unable to locate the issue form. Child creation cannot continue.');"
-      output << "    return;"
-      output << "  }"
-      output << "  var input = document.createElement('input');"
-      output << "  input.type = 'hidden';"
-      output << "  input.name = 'create_child';"
-      output << "  input.value = 'true';"
-      output << "  form.appendChild(input);"
-      output << "  var trackerInput = document.createElement('input');"
-      output << "  trackerInput.type = 'hidden';"
-      output << "  trackerInput.name = 'child_tracker_id';"
-      output << "  trackerInput.value = tracker;"
-      output << "  form.appendChild(trackerInput);"
-      output << "  var subjectInput = document.createElement('input');"
-      output << "  subjectInput.type = 'hidden';"
-      output << "  subjectInput.name = 'child_subject';"
-      output << "  subjectInput.value = subject;"
-      output << "  form.appendChild(subjectInput);"
-      output << "  var additionalCheckboxes = document.querySelectorAll('.additional-child-tracker:checked');"
-      output << "  additionalCheckboxes.forEach(function(checkbox) {"
-      output << "    var additionalInput = document.createElement('input');"
-      output << "    additionalInput.type = 'hidden';"
-      output << "    additionalInput.name = 'additional_child_tracker_ids[]';"
-      output << "    additionalInput.value = checkbox.value;"
-      output << "    form.appendChild(additionalInput);"
-      output << "  });"
-      output << "  form.submit();"
-      output << "}"
-      output << ""
-      output << "function cancelChildCreation() {"
-      output << "  var modal = document.getElementById('childDetailsModal');"
-      output << "  if (modal) { modal.parentNode && modal.parentNode.removeChild(modal); }"
-      output << "  shouldCreateChild = false;"
-      output << "  showChildDialog = false;"
-      output << "}"
-      output << ""
-      output << "document.addEventListener('DOMContentLoaded', function() {"
-      output << "  if (showChildDialog) {"
-      output << "    document.getElementById('childCreationModal').style.display = 'block';"
-      output << "  } else if (showAdditionalDialog) {"
-      output << "    document.getElementById('additionalChildModal').style.display = 'block';"
-      output << "  }"
-      output << "});"
-      output << ""
-      output << "// Prevent form submission until dialog is handled"
-      output << "document.addEventListener('DOMContentLoaded', function() {"
-      output << "  var form = document.querySelector('form.edit_issue, form#issue-form, form.new_issue, form[action*=\'/issues\']');"
-      output << "  if (form && (showChildDialog || showAdditionalDialog)) {"
-      output << "    form.addEventListener('submit', function(e) {"
-      output << "      if (shouldCreateChild === null) {"
-      output << "        e.preventDefault();"
-      output << "        if (showChildDialog) {"
-      output << "          document.getElementById('childCreationModal').style.display = 'block';"
-      output << "        } else if (showAdditionalDialog) {"
-      output << "          document.getElementById('additionalChildModal').style.display = 'block';"
-      output << "        }"
-      output << "        return false;"
-      output << "      }"
-      output << "    });"
-      output << "  }"
-      output << "});"
-      output << "</script>"
-
-      output.html_safe
+      css = <<~CSS
+        <style type='text/css'>
+          .child-creation-modal { display:none; position:fixed; z-index:1000; left:0; top:0;
+            width:100%; height:100%; background-color:rgba(0,0,0,0.5); font-family:Arial,sans-serif; }
+          .child-creation-content { background:#fff; margin:8% auto; padding:24px;
+            border:1px solid #888; width:520px; max-width:95%; border-radius:5px;
+            box-shadow:0 4px 12px rgba(0,0,0,0.2); max-height:80vh; overflow-y:auto; }
+          .child-creation-content h3 { margin-top:0; color:#333; }
+          .child-creation-content label { font-weight:bold; }
+          .child-creation-buttons { text-align:center; margin-top:20px; }
+          .child-creation-buttons button { padding:10px 22px; margin:0 6px; font-size:14px;
+            border-radius:3px; cursor:pointer; }
+          .child-creation-buttons button.yes-btn { background:#4CAF50; color:#fff; border-color:#45a049; }
+          .child-creation-buttons button.yes-btn:hover { background:#45a049; }
+          .child-creation-buttons button.no-btn { background:#f44336; color:#fff; border-color:#da190b; }
+          .child-creation-buttons button.no-btn:hover { background:#da190b; }
+          .child-req-field { margin-bottom:12px; }
+          .child-req-field label { display:block; font-size:13px; margin-bottom:4px; color:#444; }
+          .child-req-field input, .child-req-field select {
+            width:100%; padding:7px; font-size:13px; box-sizing:border-box; }
+        </style>
+      CSS
+      css.html_safe
     end
 
-    # Hook after issue is created to handle child creation or schedule a post-save prompt
+    # ─── 2. AFTER NEW ISSUE SAVED ─────────────────────────────────────────────
+    # Schedule the show-page popup only for CR-type issues.
+    # We no longer process create_child / create_additional_tasks params here
+    # because child creation now happens via AJAX from the show-page popup —
+    # that path supports required custom fields and gives the user proper feedback.
     def controller_issues_new_after_save(context = {})
-      issue = context[:issue]
-      params = context[:params]
+      issue      = context[:issue]
       controller = context[:controller]
 
       return unless issue.persisted?
       return unless issue.parent_child_update_enabled?
+      return unless issue.tracker
+      # Only schedule popup for configured parent-tracker types (e.g. Change Request)
+      return unless issue.popup_parent_tracker_names.any? { |n| n.casecmp?(issue.tracker.name) }
+      return unless controller && controller.session
 
-      debug_logging = Setting.plugin_redmine_parent_to_child_update['enable_logging'] == '1'
-      Rails.logger.info("Parent to Child: Processing after-save hook for parent ##{issue.id}") if debug_logging
+      controller.session[:redmine_parent_to_child_show_prompt_for] = issue.id.to_i
 
-      if params[:create_child] == 'true'
-        # Immediate creation path (when form provided hidden inputs before submit)
-        begin
-          child_tracker_id = params[:child_tracker_id].to_i
-          child_subject = params[:child_subject]
-
-          tracker = Tracker.find(child_tracker_id)
-
-          # Create child issue as a subtask
-          child_issue = Issue.new(
-            project: issue.project,
-            tracker: tracker,
-            subject: child_subject,
-            status: (IssueStatus.respond_to?(:default) ? IssueStatus.default : (begin; IssueStatus.find_by(is_default: true); rescue ActiveRecord::StatementInvalid; nil; end) || IssueStatus.first),
-            priority: issue.priority,
-            author_id: issue.author_id,
-            parent_id: issue.id
-          )
-
-          # Replicate parent fields and ensure the child is a subtask
-          child_issue.replicate_fields_from_parent(issue)
-
-          if child_issue.save
-            Rails.logger.info("Parent to Child: Successfully created child issue ##{child_issue.id}") if debug_logging
-          else
-            Rails.logger.error("Parent to Child: Error creating child issue: #{child_issue.errors.full_messages.join(', ')}") if debug_logging
-          end
-          additional_ids = Array(params[:additional_child_tracker_ids]).map(&:to_i).select { |value| value > 0 }
-          additional_ids.each do |additional_id|
-            next if additional_id == tracker.id
-            next unless issue.project.trackers.exists?(id: additional_id)
-
-            additional_tracker = Tracker.find(additional_id)
-            additional_child = Issue.new(
-              project: issue.project,
-              tracker: additional_tracker,
-              subject: "#{child_subject} - #{additional_tracker.name}",
-              status: (IssueStatus.respond_to?(:default) ? IssueStatus.default : (begin; IssueStatus.find_by(is_default: true); rescue ActiveRecord::StatementInvalid; nil; end) || IssueStatus.first),
-              priority: issue.priority,
-              author_id: issue.author_id,
-              parent_id: child_issue.id
-            )
-            additional_child.replicate_fields_from_parent(issue)
-            if additional_child.save
-              Rails.logger.info("Parent to Child: Successfully created additional child issue ##{additional_child.id}") if debug_logging
-            else
-              Rails.logger.error("Parent to Child: Error creating additional child issue: #{additional_child.errors.full_messages.join(', ')}") if debug_logging
-            end
-          end
-          # Optionally create Development & Testing under the newly created child
-          if Setting.plugin_redmine_parent_to_child_update['create_dev_test_tasks'] == '1'
-            dev_cat = Category.find_by(name: 'Development', project_id: issue.project.id) || Category.find_by(name: 'Development')
-            test_cat = Category.find_by(name: 'Testing', project_id: issue.project.id) || Category.find_by(name: 'Testing')
-            {'Development' => dev_cat, 'Testing' => test_cat}.each do |label, cat|
-              begin
-                auto_child = Issue.new(
-                  project: issue.project,
-                  tracker: tracker,
-                  subject: "#{child_subject} - #{label}",
-                  description: child_issue.description,
-                  status: (IssueStatus.respond_to?(:default) ? IssueStatus.default : (begin; IssueStatus.find_by(is_default: true); rescue ActiveRecord::StatementInvalid; nil; end) || IssueStatus.first),
-                  priority: issue.priority,
-                  author_id: issue.author_id,
-                  parent_id: child_issue.id,
-                  category_id: (cat && cat.id)
-                )
-                auto_child.replicate_fields_from_parent(issue)
-                auto_child.category_id = cat.id if cat
-                if auto_child.save
-                  Rails.logger.info("Parent to Child: Successfully created auto child #{label} ##{auto_child.id}") if debug_logging
-                else
-                  Rails.logger.error("Parent to Child: Error creating auto child #{label}: #{auto_child.errors.full_messages.join(', ')}") if debug_logging
-                end
-              rescue => e
-                Rails.logger.error("Parent to Child: Exception creating auto child #{label}: #{e.message}")
-              end
-            end
-          end
-        rescue => e
-          Rails.logger.error("Parent to Child: Error in child creation: #{e.message}")
-          Rails.logger.error(e.backtrace.join("\n"))
-        end
-      elsif params[:create_additional_tasks] == 'true'
-        begin
-          additional_ids = Array(params[:additional_child_tracker_ids]).map(&:to_i).select { |value| value > 0 }
-          additional_ids.each do |additional_id|
-            next unless issue.project.trackers.exists?(id: additional_id)
-
-            additional_tracker = Tracker.find(additional_id)
-            additional_child = Issue.new(
-              project: issue.project,
-              tracker: additional_tracker,
-              subject: "#{issue.subject} - #{additional_tracker.name}",
-              status: (IssueStatus.respond_to?(:default) ? IssueStatus.default : (begin; IssueStatus.find_by(is_default: true); rescue ActiveRecord::StatementInvalid; nil; end) || IssueStatus.first),
-              priority: issue.priority,
-              author_id: issue.author_id,
-              parent_id: issue.id
-            )
-            additional_child.replicate_fields_from_parent(issue)
-            if additional_child.save
-              Rails.logger.info("Parent to Child: Successfully created additional child issue ##{additional_child.id}") if debug_logging
-            else
-              Rails.logger.error("Parent to Child: Error creating additional child issue: #{additional_child.errors.full_messages.join(', ')}") if debug_logging
-            end
-          end
-
-          if Setting.plugin_redmine_parent_to_child_update['create_dev_test_tasks'] == '1'
-            dev_cat = Category.find_by(name: 'Development', project_id: issue.project.id) || Category.find_by(name: 'Development')
-            test_cat = Category.find_by(name: 'Testing', project_id: issue.project.id) || Category.find_by(name: 'Testing')
-            {'Development' => dev_cat, 'Testing' => test_cat}.each do |label, cat|
-              begin
-                next if additional_ids.include?(Tracker.find_by(name: label)&.id)
-                auto_child = Issue.new(
-                  project: issue.project,
-                  tracker: Tracker.find_by(name: label) || issue.tracker,
-                  subject: "#{issue.subject} - #{label}",
-                  description: issue.description,
-                  status: (IssueStatus.respond_to?(:default) ? IssueStatus.default : (begin; IssueStatus.find_by(is_default: true); rescue ActiveRecord::StatementInvalid; nil; end) || IssueStatus.first),
-                  priority: issue.priority,
-                  author_id: issue.author_id,
-                  parent_id: issue.id,
-                  category_id: (cat && cat.id)
-                )
-                auto_child.replicate_fields_from_parent(issue)
-                auto_child.category_id = cat.id if cat
-                if auto_child.save
-                  Rails.logger.info("Parent to Child: Successfully created auto child #{label} ##{auto_child.id}") if debug_logging
-                else
-                  Rails.logger.error("Parent to Child: Error creating auto child #{label}: #{auto_child.errors.full_messages.join(', ')}") if debug_logging
-                end
-              rescue => e
-                Rails.logger.error("Parent to Child: Exception creating auto child #{label}: #{e.message}")
-              end
-            end
-          end
-        rescue => e
-          Rails.logger.error("Parent to Child: Error in additional task creation: #{e.message}")
-          Rails.logger.error(e.backtrace.join("\n"))
-        end
-      else
-        # No immediate child parameters provided — schedule a post-save prompt on the issue show page
-        begin
-          if controller && controller.session
-            controller.session[:redmine_parent_to_child_show_prompt_for] = issue.id
-            Rails.logger.info("Parent to Child: Scheduled post-save prompt for issue ##{issue.id}") if debug_logging
-          end
-        rescue => e
-          Rails.logger.warn("Parent to Child: Failed to set session prompt: #{e.message}") if debug_logging
-        end
+      debug_logging = begin
+        Setting.plugin_redmine_parent_to_child_update['enable_logging'] == '1'
+      rescue
+        false
       end
+      Rails.logger.info("Parent to Child: Scheduled show-page popup for issue ##{issue.id}") if debug_logging
     end
 
-    # Show the child-creation prompt on the issue show page when scheduled
+    # ─── 3. ISSUE SHOW PAGE ───────────────────────────────────────────────────
+    # Renders the child-creation popup immediately after a CR is first viewed
+    # following its creation.  The popup:
+    #   • lets the user pick a child tracker
+    #   • fetches required custom fields missing from the parent (via AJAX)
+    #   • creates the child via AJAX (no page reload needed for the POST itself)
     def view_issues_show_details_bottom(context = {})
-      issue = context[:issue]
+      issue      = context[:issue]
       controller = context[:controller]
 
-      return unless controller && controller.session
-      scheduled_id = controller.session.delete(:redmine_parent_to_child_show_prompt_for)
-      return unless scheduled_id == issue.id
       return unless issue.parent_child_update_enabled?
+      return unless controller && controller.session
+
+      scheduled_id = controller.session.delete(:redmine_parent_to_child_show_prompt_for)
+      # Session may serialise the integer as a String — compare both sides as integers
+      return unless scheduled_id.to_i == issue.id.to_i
+
+      trackers     = issue.available_child_trackers
+      first_tracker_id = trackers.first&.id.to_i
 
       output = +""
-      output << "<style type='text/css'>"
-      output << ".child-creation-modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); font-family: Arial, sans-serif; }"
-      output << ".child-creation-content { background-color: white; margin: 10% auto; padding: 20px; border: 1px solid #888; width: 500px; border-radius: 5px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }"
-      output << ".child-creation-content h3 { margin-top: 0; color: #333; }"
-      output << ".child-creation-content p { color: #666; line-height: 1.6; }"
-      output << ".child-creation-buttons { text-align: center; margin-top: 20px; }"
-      output << ".child-creation-buttons button { padding: 10px 20px; margin: 0 5px; font-size: 14px; border-radius: 3px; border: 1px solid #ccc; background-color: #f5f5f5; cursor: pointer; }"
-      output << ".child-creation-buttons button:hover { background-color: #e0e0e0; }"
-      output << ".child-creation-buttons button.yes-btn { background-color: #4CAF50; color: white; border-color: #45a049; }"
-      output << ".child-creation-buttons button.yes-btn:hover { background-color: #45a049; }"
-      output << ".child-creation-buttons button.no-btn { background-color: #f44336; color: white; border-color: #da190b; }"
-      output << ".child-creation-buttons button.no-btn:hover { background-color: #da190b; }"
-      output << "</style>"
 
-      output << "<div id='childCreationModalShow' class='child-creation-modal'>"
+      # ── modal HTML ──────────────────────────────────────────────────────────
+      output << "<div id='pcu-child-modal' class='child-creation-modal'>"
       output << "  <div class='child-creation-content'>"
       output << "    <h3>Create Child Issue</h3>"
-      output << "    <p>Would you like to create a child issue (subtask) for this #{issue.tracker.name}?</p>"
-      output << "    <p>If yes, the child issue will inherit all relevant fields from the parent issue.</p>"
-      output << "    <div style='margin:12px 0;'>"
-      output << "      <label>Select child type:</label>"
-      output << "      <select id='childTrackerShow' style='width:100%; margin-top:6px; padding:6px;'>"
-      issue.available_child_trackers.each do |t|
-        output << "        <option value='#{t.id}'>#{t.name}</option>"
+      output << "    <p style='color:#666;'>This <strong>#{issue.tracker.name}</strong> was just created. "
+      output << "Would you like to create a child issue? It will inherit fields from this issue.</p>"
+
+      output << "    <div style='margin:14px 0;'>"
+      output << "      <label for='pcu-tracker-select'>Child issue type <span style='color:red'>*</span></label>"
+      output << "      <select id='pcu-tracker-select' style='width:100%;margin-top:5px;padding:7px;font-size:13px;'"
+      output << "              onchange='pcuLoadRequiredFields(#{issue.id})'>"
+      trackers.each_with_index do |t, i|
+        output << "        <option value='#{t.id}'#{i == 0 ? " selected" : ""}>#{t.name}</option>"
       end
       output << "      </select>"
       output << "    </div>"
-      output << "    <div style='margin:12px 0;'>"
-      output << "      <label>Child subject:</label>"
-      output << "      <input type='text' id='childSubjectShow' style='width:100%; padding:8px; margin-top:6px;' placeholder='Child subject' value='#{issue.subject.to_s.gsub("'", '&#39;')}'>"
+
+      output << "    <div style='margin:14px 0;'>"
+      output << "      <label for='pcu-subject'>Child subject <span style='color:red'>*</span></label>"
+      output << "      <input type='text' id='pcu-subject'"
+      output << "             style='width:100%;margin-top:5px;padding:7px;font-size:13px;box-sizing:border-box;'"
+      output << "             value='#{issue.subject.to_s.gsub("'", '&#39;').gsub('"', '&quot;')}'>"
       output << "    </div>"
+
+      output << "    <div id='pcu-required-fields'></div>"
+
       if issue.additional_child_trackers.any?
-        output << "    <div style='margin:12px 0;'>"
-        output << "      <label>Create additional child issues:</label>"
+        output << "    <div style='margin:14px 0;'>"
+        output << "      <label>Also create additional child issues:</label>"
         issue.additional_child_trackers.each do |t|
-          output << "      <div style='margin-top:5px;'><label><input type='checkbox' class='additional-child-tracker-show' value='#{t.id}'> #{t.name}</label></div>"
+          output << "      <div style='margin-top:6px;'>"
+          output << "        <label><input type='checkbox' class='pcu-extra-tracker' value='#{t.id}'> #{t.name}</label>"
+          output << "      </div>"
         end
         output << "    </div>"
       end
+
+      output << "    <div id='pcu-status-msg' style='display:none;margin:10px 0;padding:8px;"
+      output << "         border-radius:3px;font-size:13px;'></div>"
+
       output << "    <div class='child-creation-buttons'>"
-      output << "      <button type='button' class='yes-btn' onclick='createChildFromShow(#{issue.id})'>Yes, Create Child</button>"
-      output << "      <button type='button' class='no-btn' onclick='document.getElementById(\"childCreationModalShow\").style.display = \"none\";'>No</button>"
+      output << "      <button type='button' class='yes-btn' id='pcu-submit-btn'"
+      output << "              onclick='pcuCreateChild(#{issue.id})'>Yes, Create Child</button>"
+      output << "      <button type='button' class='no-btn'"
+      output << "              onclick='document.getElementById(\"pcu-child-modal\").style.display=\"none\"'>No</button>"
       output << "    </div>"
       output << "  </div>"
       output << "</div>"
 
+      # ── JavaScript ──────────────────────────────────────────────────────────
       output << "<script type='text/javascript'>"
-      output << "function createChildFromShow(parentId) {"
-      output << "  var tracker = document.getElementById('childTrackerShow').value;"
-      output << "  var subject = document.getElementById('childSubjectShow').value;"
-      output << "  if (!tracker || !subject) { alert('Please select a child type and enter a subject'); return; }"
-      output << "  var token = document.querySelector('meta[name=csrf-token]') && document.querySelector('meta[name=csrf-token]').getAttribute('content');"
-      output << "  if (!token) {"
-      output << "    var tokenInput = document.querySelector('input[name=authenticity_token]');"
-      output << "    token = tokenInput && tokenInput.value;"
-      output << "  }"
-      output << "  if (!token) { alert('CSRF token not found; please reload the page and try again.'); return; }"
-      output << "  var data = new FormData();"
-      output << "  data.append('tracker_id', tracker);"
-      output << "  data.append('subject', subject);"
-      output << "  var additional = document.querySelectorAll('.additional-child-tracker-show:checked');"
-      output << "  additional.forEach(function(checkbox) { data.append('additional_child_tracker_ids[]', checkbox.value); });"
-      output << "  fetch('/redmine_parent_to_child_update/child_issues/create/' + parentId, { method: 'POST', headers: { 'X-CSRF-Token': token, 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }, body: data, credentials: 'same-origin' })"
-      output << "    .then(function(response) {"
-      output << "      return response.text().then(function(text) {"
-      output << "        if (!response.ok) {"
-      output << "          try { var json = JSON.parse(text); throw new Error(json.error || text); } catch (e) { throw new Error(text); }"
-      output << "        }"
-      output << "        return JSON.parse(text);"
-      output << "      });"
-      output << "    })"
-      output << "    .then(function(json) {"
-      output << "      if (json.error) { alert('Error creating child: ' + json.error); } else if (json.children && json.children.length > 1) { window.location.reload(); } else if (json.children && json.children.length === 1) { window.location = json.children[0].url; } else if (json.url) { window.location = json.url; }"
-      output << "    })"
-      output << "    .catch(function(err) { alert('Error creating child: ' + err.message); });"
+
+      output << "function pcuCsrfToken(){"
+      output << "  var m=document.querySelector('meta[name=csrf-token]');"
+      output << "  if(m) return m.getAttribute('content');"
+      output << "  var i=document.querySelector('input[name=authenticity_token]');"
+      output << "  return i?i.value:null;"
       output << "}"
-      output << "document.addEventListener('DOMContentLoaded', function(){ document.getElementById('childCreationModalShow').style.display='block'; });"
+
+      # Load required fields for selected tracker
+      output << "function pcuLoadRequiredFields(parentId){"
+      output << "  var tid=document.getElementById('pcu-tracker-select').value;"
+      output << "  var box=document.getElementById('pcu-required-fields');"
+      output << "  box.innerHTML='';"
+      output << "  if(!tid) return;"
+      output << "  fetch('/redmine_parent_to_child_update/child_issues/required_fields/'+parentId+'?tracker_id='+tid,{"
+      output << "    headers:{'X-Requested-With':'XMLHttpRequest','Accept':'application/json'},"
+      output << "    credentials:'same-origin'"
+      output << "  }).then(function(r){return r.json();})"
+      output << "  .then(function(json){"
+      output << "    if(!json.fields||json.fields.length===0) return;"
+      output << "    var hd=document.createElement('p');"
+      output << "    hd.style.cssText='font-weight:bold;margin:14px 0 6px;color:#333;font-size:13px;border-top:1px solid #eee;padding-top:12px;';"
+      output << "    hd.textContent='Additional fields for child issue:';"
+      output << "    box.appendChild(hd);"
+      output << "    json.fields.forEach(function(cf){"
+      output << "      var w=document.createElement('div');"
+      output << "      w.className='child-req-field';"
+      # Label with required/optional badge
+      output << "      var lb=document.createElement('label');"
+      output << "      var badge=cf.is_required"
+      output << "        ? '<span style=\"font-size:10px;background:#f44336;color:#fff;border-radius:3px;padding:1px 5px;margin-left:5px;\">required</span>'"
+      output << "        : '<span style=\"font-size:10px;background:#888;color:#fff;border-radius:3px;padding:1px 5px;margin-left:5px;\">optional</span>';"
+      output << "      lb.innerHTML=cf.name+badge;"
+      output << "      w.appendChild(lb);"
+      # Resolve the best initial value: parent value > default value > ''
+      output << "      var initVal=(cf.value&&cf.value.trim()!=='')?cf.value:cf.default_value||'';"
+      output << "      var inp;"
+      output << "      if(cf.field_format==='list'&&cf.possible_values.length>0){"
+      output << "        inp=document.createElement('select');"
+      output << "        var bk=document.createElement('option'); bk.value=''; bk.textContent='-- Select --';"
+      output << "        inp.appendChild(bk);"
+      output << "        cf.possible_values.forEach(function(v){"
+      output << "          var o=document.createElement('option'); o.value=v; o.textContent=v;"
+      output << "          if(v===initVal) o.selected=true;"
+      output << "          inp.appendChild(o);"
+      output << "        });"
+      output << "      } else if(cf.field_format==='bool'){"
+      output << "        inp=document.createElement('select');"
+      output << "        [['','-- Select --'],['0','No'],['1','Yes']].forEach(function(p){"
+      output << "          var o=document.createElement('option'); o.value=p[0]; o.textContent=p[1];"
+      output << "          if(p[0]===initVal) o.selected=true;"
+      output << "          inp.appendChild(o);"
+      output << "        });"
+      output << "      } else if(cf.field_format==='date'){"
+      output << "        inp=document.createElement('input'); inp.type='date';"
+      output << "        if(initVal) inp.value=initVal;"
+      output << "      } else if(cf.field_format==='int'||cf.field_format==='float'){"
+      output << "        inp=document.createElement('input'); inp.type='number';"
+      output << "        if(initVal) inp.value=initVal;"
+      output << "      } else {"
+      output << "        inp=document.createElement('input'); inp.type='text';"
+      output << "        if(initVal) inp.value=initVal;"
+      output << "      }"
+      output << "      inp.dataset.cfId=cf.id;"
+      output << "      inp.dataset.required=cf.is_required?'1':'0';"
+      output << "      inp.className='pcu-req-cf';"
+      output << "      w.appendChild(inp);"
+      output << "      box.appendChild(w);"
+      output << "    });"
+      output << "  }).catch(function(){});"
+      output << "}"
+
+      # Create child via AJAX
+      output << "function pcuCreateChild(parentId){"
+      output << "  var tracker=document.getElementById('pcu-tracker-select').value;"
+      output << "  var subject=document.getElementById('pcu-subject').value.trim();"
+      output << "  if(!tracker){alert('Please select a child issue type.');return;}"
+      output << "  if(!subject){alert('Please enter a subject for the child issue.');return;}"
+      # Validate only fields marked as required (data-required="1")
+      output << "  var cfInputs=document.querySelectorAll('.pcu-req-cf');"
+      output << "  for(var i=0;i<cfInputs.length;i++){"
+      output << "    if(cfInputs[i].dataset.required!=='1') continue;"
+      output << "    if(!cfInputs[i].value||cfInputs[i].value.trim()===''){"
+      output << "      var lbl=cfInputs[i].closest('.child-req-field');"
+      output << "      var fn=lbl?lbl.querySelector('label').textContent.trim():'A required field';"
+      output << "      alert(fn+' cannot be blank.'); cfInputs[i].focus(); return;"
+      output << "    }"
+      output << "  }"
+      output << "  var token=pcuCsrfToken();"
+      output << "  if(!token){alert('CSRF token not found. Please reload and try again.');return;}"
+      output << "  var btn=document.getElementById('pcu-submit-btn');"
+      output << "  btn.disabled=true; btn.textContent='Creating...';"
+      output << "  var data=new FormData();"
+      output << "  data.append('tracker_id',tracker);"
+      output << "  data.append('subject',subject);"
+      output << "  cfInputs.forEach(function(inp){"
+      output << "    if(inp.dataset.cfId&&inp.value){"
+      output << "      data.append('custom_field_values['+inp.dataset.cfId+']',inp.value);"
+      output << "    }"
+      output << "  });"
+      output << "  document.querySelectorAll('.pcu-extra-tracker:checked').forEach(function(cb){"
+      output << "    data.append('additional_child_tracker_ids[]',cb.value);"
+      output << "  });"
+      output << "  fetch('/redmine_parent_to_child_update/child_issues/create/'+parentId,{"
+      output << "    method:'POST',"
+      output << "    headers:{'X-CSRF-Token':token,'X-Requested-With':'XMLHttpRequest','Accept':'application/json'},"
+      output << "    body:data, credentials:'same-origin'"
+      output << "  }).then(function(r){"
+      output << "    return r.text().then(function(t){"
+      output << "      if(!r.ok){"
+      output << "        try{var j=JSON.parse(t);throw new Error(j.error||t);}catch(e){throw new Error(t);}"
+      output << "      }"
+      output << "      return JSON.parse(t);"
+      output << "    });"
+      output << "  }).then(function(json){"
+      output << "    if(json.error){"
+      output << "      pcuShowStatus(json.error,'#fdecea','#c62828');"
+      output << "      btn.disabled=false; btn.textContent='Yes, Create Child';"
+      output << "    } else {"
+      output << "      pcuShowStatus('Child issue created successfully! Reloading...','#e8f5e9','#2e7d32');"
+      output << "      setTimeout(function(){ window.location.reload(); },1200);"
+      output << "    }"
+      output << "  }).catch(function(err){"
+      output << "    pcuShowStatus(err.message,'#fdecea','#c62828');"
+      output << "    btn.disabled=false; btn.textContent='Yes, Create Child';"
+      output << "  });"
+      output << "}"
+
+      output << "function pcuShowStatus(msg,bg,color){"
+      output << "  var el=document.getElementById('pcu-status-msg');"
+      output << "  el.style.display='block'; el.style.background=bg; el.style.color=color;"
+      output << "  el.textContent=msg;"
+      output << "}"
+
+      # Show popup on load and auto-fetch required fields for the first tracker
+      output << "document.addEventListener('DOMContentLoaded',function(){"
+      output << "  document.getElementById('pcu-child-modal').style.display='block';"
+      if first_tracker_id > 0
+        output << "  pcuLoadRequiredFields(#{issue.id});"
+      end
+      output << "});"
+
       output << "</script>"
 
       output.html_safe
     end
+
   end
 end

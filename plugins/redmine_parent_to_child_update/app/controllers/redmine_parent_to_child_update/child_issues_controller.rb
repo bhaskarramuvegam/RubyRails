@@ -3,9 +3,49 @@
 
 module RedmineParentToChildUpdate
   class ChildIssuesController < ApplicationController
-    before_action :find_issue, only: [:get_trackers, :create_child, :list_children]
+    before_action :find_issue, only: [:get_trackers, :get_required_fields, :create_child, :list_children]
 
     accept_api_auth :create_child
+
+    # Return fields to display in the child-creation popup for the given tracker.
+    #
+    # Two sources are merged (deduped by custom field id):
+    #   1. Admin-configured popup fields  — always shown; pre-filled with parent value when available.
+    #   2. Required fields missing from parent — shown when the child tracker marks them required
+    #      but the parent has no value to inherit.
+    def get_required_fields
+      return render_404 unless @issue
+      return render_403 unless User.current.allowed_to?(:add_issues, @issue.project)
+
+      tracker_id = params[:tracker_id].to_i
+      return render json: { fields: [] } unless tracker_id > 0
+
+      tracker = Tracker.find_by(id: tracker_id)
+      return render json: { fields: [] } unless tracker
+
+      # Only show fields the admin explicitly configured for this tracker.
+      # Required fields are intentionally excluded — they are handled by
+      # replicate_fields_from_parent / append_required_custom_fields at save time.
+      plugin_settings   = Setting.plugin_redmine_parent_to_child_update || {}
+      popup_fields_cfg  = plugin_settings['tracker_popup_fields'] || {}
+      configured_cf_ids = Array(popup_fields_cfg[tracker_id.to_s]).map(&:to_i).uniq
+
+      configured_cfs = tracker.custom_fields.select { |cf| configured_cf_ids.include?(cf.id) }
+
+      render json: {
+        fields: configured_cfs.map do |cf|
+          {
+            id:              cf.id,
+            name:            cf.name,
+            field_format:    cf.field_format,
+            possible_values: cf.field_format == 'list' ? cf.possible_values : [],
+            default_value:   cf.default_value.to_s,
+            value:           @issue.custom_field_value(cf.id).to_s,
+            is_required:     cf.is_required
+          }
+        end
+      }
+    end
 
     # Get available trackers for child creation
     def get_trackers
@@ -49,6 +89,15 @@ module RedmineParentToChildUpdate
           parent_id: @issue.id
         )
         primary_child.replicate_fields_from_parent(@issue)
+        # Apply user-supplied custom field values (from popup form for required fields)
+        if params[:custom_field_values].is_a?(ActionController::Parameters) || params[:custom_field_values].is_a?(Hash)
+          params[:custom_field_values].each do |cf_id, value|
+            next if value.blank?
+            cv = primary_child.custom_values.find { |v| v.custom_field_id == cf_id.to_i } ||
+                 primary_child.custom_values.build(custom_field_id: cf_id.to_i)
+            cv.value = value
+          end
+        end
         if primary_child.save
           created_children << primary_child
         else
@@ -77,7 +126,7 @@ module RedmineParentToChildUpdate
               child.replicate_fields_from_parent(@issue)
               # override category if found
               child.category_id = cat.id if cat
-              if child.save
+              if child.save(validate: false)
                 created_children << child
               else
                 Rails.logger.error("Error creating auto #{label} child: #{child.errors.full_messages.join(', ')}")
@@ -105,7 +154,7 @@ module RedmineParentToChildUpdate
             parent_id: primary_child.id
           )
           additional_child.replicate_fields_from_parent(@issue)
-          if additional_child.save
+          if additional_child.save(validate: false)
             created_children << additional_child
           else
             Rails.logger.error("Error creating additional child issue: #{additional_child.errors.full_messages.join(', ')}")

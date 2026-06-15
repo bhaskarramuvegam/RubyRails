@@ -5,6 +5,7 @@ RedmineApp::Application.routes.draw do
     resources :child_issues, only: [] do
       collection do
         get :get_trackers, path: 'trackers/:issue_id'
+        get :get_required_fields, path: 'required_fields/:issue_id'
         post :create_child, path: 'create/:issue_id'
         get :list_children, path: 'children/:issue_id'
       end

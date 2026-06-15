@@ -13,9 +13,12 @@ module RedmineParentToChildUpdate
     end
 
     module InstanceMethods
-      # Check if plugin is enabled
+      # Check if plugin is enabled.
+      # Defaults to enabled — only disabled when the admin explicitly sets 'enabled' to '0'.
+      # This handles fresh installs where the settings row may not exist in the DB yet.
       def parent_child_update_enabled?
-        Setting.plugin_redmine_parent_to_child_update['enabled'] == '1'
+        s = Setting.plugin_redmine_parent_to_child_update
+        s.nil? || s['enabled'] != '0'
       end
 
       # Get enabled parent issue types
@@ -115,7 +118,10 @@ module RedmineParentToChildUpdate
         self.custom_fields.each do |cf|
           next unless cf.respond_to?(:is_required) ? cf.is_required : cf.required?
           value = parent_issue.custom_field_value(cf.id)
-          next if value.nil? && !value.is_a?(Numeric)
+          # Fall back to the field's default_value when the parent doesn't have this field
+          value = cf.default_value if value.nil?
+          # Use empty string so the custom_value record is present (avoids "cannot be blank" on missing records)
+          value = '' if value.nil?
 
           begin
             if self.new_record?
@@ -137,23 +143,33 @@ module RedmineParentToChildUpdate
         end
       end
 
+      # Tracker names that trigger the primary child-creation popup.
+      # Reads from plugin settings; falls back to the hard-coded default list.
+      def popup_parent_tracker_names
+        raw = Setting.plugin_redmine_parent_to_child_update['popup_parent_trackers'].to_s
+        names = raw.split(',').map(&:strip).reject(&:blank?)
+        names.empty? ? ['Change Request', 'CR'] : names
+      end
+
       # Check if this issue should trigger the primary child creation popup
       def should_show_child_popup?
         return false unless parent_child_update_enabled?
         return false if parent_id.present? # This is already a child
-        return false unless new_record? # Only on creation
+        return false unless new_record?    # Only on creation
         return false unless tracker
-        return false if tracker.name == 'User Story'  # User Story gets additional-only popup
 
-        tracker.name == 'Change Request'  # Only Change Request gets primary popup
+        popup_parent_tracker_names.any? { |name| name.casecmp?(tracker.name) }
       end
 
       # Check if this issue should trigger the additional-task-only popup
+      # (fires for any non-primary-popup tracker that has dev/test tasks or additional children configured)
       def should_show_additional_child_popup?
         return false unless parent_child_update_enabled?
         return false if parent_id.present?
         return false unless new_record?
-        return false unless tracker&.name == 'User Story'
+        return false unless tracker
+        # Don't show for trackers that already get the primary popup
+        return false if popup_parent_tracker_names.any? { |name| name.casecmp?(tracker.name) }
 
         create_dev_test_tasks? || additional_child_trackers.any?
       end

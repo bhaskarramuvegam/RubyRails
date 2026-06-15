@@ -1,72 +1,407 @@
 <%- @settings ||= {} %>
-<div class="box">
-  <h3>Plugin Settings</h3>
 
-  <div class="setting">
-    <label for="settings_enabled">
-      <%= check_box_tag('settings[enabled]', '1', @settings['enabled'] == '1') %>
-      Enable Parent to Child Update Plugin
-    </label>
-  </div>
+<style>
+/* ── layout ──────────────────────────────────────────────────────────────── */
+.pcu-box          { border:1px solid #ddd; border-radius:4px; margin-bottom:20px; }
+.pcu-box-head     { padding:9px 14px; background:#f5f5f5; border-bottom:1px solid #ddd;
+                    font-weight:bold; font-size:13px; color:#333; }
+.pcu-box-body     { padding:14px 16px; }
+.pcu-setting      { margin-bottom:14px; }
+.pcu-setting:last-child { margin-bottom:0; }
+.pcu-setting label      { font-weight:bold; display:block; margin-bottom:4px; font-size:13px; }
+.pcu-setting label.inline { display:inline; font-weight:normal; }
+.pcu-hint         { color:#777; font-size:12px; margin-top:3px; }
 
-  <div class="setting">
-    <label for="settings_enable_logging">
-      <%= check_box_tag('settings[enable_logging]', '1', @settings['enable_logging'] == '1') %>
-      Enable Debug Logging
-    </label>
-  </div>
+/* ── tracker accordion ───────────────────────────────────────────────────── */
+.pcu-tracker      { border:1px solid #ddd; border-radius:4px; margin-bottom:10px; }
+.pcu-tracker-hd   { padding:9px 14px; background:#fafafa; cursor:pointer;
+                    display:flex; justify-content:space-between; align-items:center;
+                    font-size:13px; font-weight:bold; user-select:none; }
+.pcu-tracker-hd:hover { background:#eef5fb; }
+.pcu-tracker-bd   { padding:14px 16px; display:none; border-top:1px solid #eee; }
+.pcu-tracker-bd.open { display:block; }
 
-  <div class="setting">
-    <label for="settings_auto_replicate_fields">
-      <%= check_box_tag('settings[auto_replicate_fields]', '1', @settings['auto_replicate_fields'] == '1') %>
-      Automatically Replicate Parent Fields to Child
-    </label>
-  </div>
+/* ── selected fields chips ───────────────────────────────────────────────── */
+.pcu-chips        { display:flex; flex-wrap:wrap; gap:7px; min-height:36px;
+                    padding:7px; border:1px dashed #ccc; border-radius:4px;
+                    background:#fff; margin-bottom:12px; align-items:center; }
+.pcu-chip         { display:inline-flex; align-items:center; gap:5px;
+                    background:#e3f2fd; border:1px solid #90caf9;
+                    border-radius:14px; padding:3px 10px 3px 12px;
+                    font-size:12px; color:#1565c0; }
+.pcu-chip .pcu-chip-req  { font-size:10px; background:#f44336; color:#fff;
+                            border-radius:3px; padding:1px 4px; }
+.pcu-chip .pcu-chip-opt  { font-size:10px; background:#9e9e9e; color:#fff;
+                            border-radius:3px; padding:1px 4px; }
+.pcu-chip-remove  { background:none; border:none; cursor:pointer; font-size:15px;
+                    line-height:1; color:#1565c0; padding:0; margin-left:2px; }
+.pcu-chip-remove:hover { color:#c62828; }
+.pcu-chips-empty  { color:#aaa; font-size:12px; font-style:italic; padding:4px 2px; }
 
-  <div class="setting">
-    <label for="settings_parent_issue_types">
-      Parent Issue Types (comma-separated)
-    </label>
-    <%= text_field_tag('settings[parent_issue_types]', @settings['parent_issue_types'] || 'Bug,Feature,Task,Support', size: 50) %>
-    <em>Only these issue types will trigger the child creation dialog</em>
-  </div>
+/* ── add-field row ───────────────────────────────────────────────────────── */
+.pcu-add-row      { display:flex; gap:8px; align-items:center; }
+.pcu-add-row select { flex:1; padding:6px 8px; font-size:13px;
+                      border:1px solid #ccc; border-radius:3px; }
+.pcu-add-btn      { padding:6px 14px; font-size:13px; background:#4caf50; color:#fff;
+                    border:none; border-radius:3px; cursor:pointer; white-space:nowrap; }
+.pcu-add-btn:hover { background:#388e3c; }
+.pcu-add-btn:disabled { background:#aaa; cursor:default; }
 
-  <div class="setting">
-    <label for="settings_replicated_fields">
-      Fields Replicated to Child Issue (comma-separated)
-    </label>
-    <%= text_area_tag('settings[replicated_fields]', @settings['replicated_fields'] || 'priority,assigned_to,category,fixed_version,description,due_date,start_date,estimated_hours,custom_fields', rows: 4, cols: 70) %>
-    <p class="desc">
-      Use these field names: <code>priority, assigned_to, category, fixed_version, description, due_date, start_date, estimated_hours, custom_fields</code>.
-      Required fields from the parent issue will be appended automatically when enabled.
-    </p>
-  </div>
+/* ── misc ────────────────────────────────────────────────────────────────── */
+.pcu-no-trackers  { color:#aaa; font-size:13px; font-style:italic; }
+.pcu-count-badge  { font-size:11px; background:#4c96c4; color:#fff; border-radius:10px;
+                    padding:1px 7px; margin-left:6px; font-weight:normal; }
+.pcu-arrow        { font-size:11px; color:#888; }
+</style>
 
-  <div class="setting">
-    <label for="settings_append_required_fields">
-      <%= check_box_tag('settings[append_required_fields]', '1', @settings['append_required_fields'] != '0') %>
-      Append required fields from parent issue
-    </label>
-  </div>
+<%# ═══════════════════════════════════════════════════════════════════════════
+    SECTION 1 – General
+    ═══════════════════════════════════════════════════════════════════════════ %>
+<div class="pcu-box">
+  <div class="pcu-box-head">General</div>
+  <div class="pcu-box-body">
 
-  <div class="setting">
-    <label for="settings_create_additional_children">
-      <%= check_box_tag('settings[create_additional_children]', '1', @settings['create_additional_children'] != '0') %>
-      Enable creation of additional child issues (Development Task, Testing Task)
-    </label>
-  </div>
+    <div class="pcu-setting">
+      <label class="inline">
+        <%= check_box_tag 'settings[enabled]', '1', @settings['enabled'] != '0' %>
+        Enable Parent-to-Child Update plugin
+      </label>
+    </div>
 
-  <div class="setting">
-    <label for="settings_additional_child_trackers">
-      Additional Child Trackers (comma-separated)
-    </label>
-    <%= text_field_tag('settings[additional_child_trackers]', @settings['additional_child_trackers'] || 'Development Task,Testing Task', size: 50) %>
-    <em>These tracker names will be offered as additional tasks to create alongside the primary child.</em>
-  </div>
-  <div class="setting">
-    <label for="settings_create_dev_test_tasks">
-      <%= check_box_tag('settings[create_dev_test_tasks]', '1', @settings['create_dev_test_tasks'] == '1') %>
-      Automatically create Development and Testing child tasks under the new child
-    </label>
+    <div class="pcu-setting">
+      <label class="inline">
+        <%= check_box_tag 'settings[enable_logging]', '1', @settings['enable_logging'] == '1' %>
+        Enable debug logging (Rails log)
+      </label>
+    </div>
+
+    <div class="pcu-setting">
+      <label>Parent tracker names that trigger the child-creation popup</label>
+      <%= text_field_tag 'settings[parent_issue_types]',
+            @settings['parent_issue_types'] || 'Change Request,CR',
+            style: 'width:100%;max-width:520px;padding:6px;font-size:13px;' %>
+      <p class="pcu-hint">Comma-separated, case-insensitive. Example: <code>Change Request, CR</code></p>
+    </div>
+
   </div>
 </div>
+
+<%# ═══════════════════════════════════════════════════════════════════════════
+    SECTION 2 – Field Replication
+    ═══════════════════════════════════════════════════════════════════════════ %>
+<div class="pcu-box">
+  <div class="pcu-box-head">Field Replication</div>
+  <div class="pcu-box-body">
+
+    <div class="pcu-setting">
+      <label class="inline">
+        <%= check_box_tag 'settings[auto_replicate_fields]', '1',
+              @settings['auto_replicate_fields'] != '0' %>
+        Automatically replicate parent fields to child on creation
+      </label>
+    </div>
+
+    <div class="pcu-setting">
+      <label>Fields to replicate (comma-separated key names)</label>
+      <%= text_area_tag 'settings[replicated_fields]',
+            @settings['replicated_fields'] ||
+            'priority,assigned_to,category,fixed_version,description,due_date,start_date,estimated_hours,custom_fields',
+            rows: 3, style: 'width:100%;max-width:560px;font-size:13px;padding:6px;' %>
+      <p class="pcu-hint">
+        Valid keys: <code>priority, assigned_to, category, fixed_version, description,
+        due_date, start_date, estimated_hours, custom_fields, author, subject</code>
+      </p>
+    </div>
+
+    <div class="pcu-setting">
+      <label class="inline">
+        <%= check_box_tag 'settings[append_required_fields]', '1',
+              @settings['append_required_fields'] != '0' %>
+        Also copy required custom fields from parent even when not in the list above
+      </label>
+    </div>
+
+  </div>
+</div>
+
+<%# ═══════════════════════════════════════════════════════════════════════════
+    SECTION 3 – Additional Child Issues
+    ═══════════════════════════════════════════════════════════════════════════ %>
+<div class="pcu-box">
+  <div class="pcu-box-head">Additional Child Issues</div>
+  <div class="pcu-box-body">
+
+    <div class="pcu-setting">
+      <label class="inline">
+        <%= check_box_tag 'settings[create_additional_children]', '1',
+              @settings['create_additional_children'] != '0' %>
+        Allow creating additional child issues alongside the primary child
+      </label>
+    </div>
+
+    <div class="pcu-setting">
+      <label>Additional child tracker names (comma-separated)</label>
+      <%= text_field_tag 'settings[additional_child_trackers]',
+            @settings['additional_child_trackers'] || 'Development Task,Testing Task',
+            style: 'width:100%;max-width:420px;padding:6px;font-size:13px;' %>
+    </div>
+
+    <div class="pcu-setting">
+      <label class="inline">
+        <%= check_box_tag 'settings[create_dev_test_tasks]', '1',
+              @settings['create_dev_test_tasks'] == '1' %>
+        Auto-create Development &amp; Testing sub-tasks under the new child
+      </label>
+    </div>
+
+  </div>
+</div>
+
+<%# ═══════════════════════════════════════════════════════════════════════════
+    SECTION 4 – Popup Fields Per Child Tracker
+    ═══════════════════════════════════════════════════════════════════════════ %>
+<div class="pcu-box">
+  <div class="pcu-box-head">Popup Fields Per Child Tracker</div>
+  <div class="pcu-box-body">
+
+    <p style="margin:0 0 14px;color:#555;font-size:13px;">
+      For each child tracker, choose which custom fields appear in the
+      <em>Create Child Issue</em> popup. Use <strong>+ Add</strong> to pick a field and
+      <strong>×</strong> to remove it. Only the fields listed here will be shown in the popup
+      (plus any <span style="background:#f44336;color:#fff;border-radius:3px;padding:0 4px;font-size:11px;">required</span>
+      fields that the parent cannot supply, which are always included automatically).
+    </p>
+
+    <%
+      popup_cfg    = (@settings['tracker_popup_fields'] || {}).transform_keys(&:to_s)
+      all_trackers = Tracker.order(:name)
+    %>
+
+    <% if all_trackers.empty? %>
+      <p class="pcu-no-trackers">No trackers found in this Redmine instance.</p>
+    <% else %>
+      <% all_trackers.each do |tracker| %>
+        <%
+          all_cfs      = tracker.custom_fields.order(:name)
+          sel_ids      = Array(popup_cfg[tracker.id.to_s]).map(&:to_s).uniq
+          sel_cfs      = all_cfs.select { |cf| sel_ids.include?(cf.id.to_s) }
+          avail_cfs    = all_cfs.reject  { |cf| sel_ids.include?(cf.id.to_s) }
+          tid          = tracker.id
+        %>
+
+        <div class="pcu-tracker" id="pcu-tracker-<%= tid %>">
+
+          <%# ── accordion header ─────────────────────────────────────────── %>
+          <div class="pcu-tracker-hd" onclick="pcuToggle(<%= tid %>)">
+            <span>
+              <%= tracker.name %>
+              <span class="pcu-count-badge" id="pcu-count-<%= tid %>">
+                <%= sel_cfs.size %>
+              </span>
+              <span style="color:#888;font-weight:normal;font-size:11px;">
+                field<%= sel_cfs.size == 1 ? '' : 's' %> in popup
+              </span>
+            </span>
+            <span class="pcu-arrow" id="pcu-arrow-<%= tid %>">
+              <%= sel_cfs.any? ? '▲' : '▼' %>
+            </span>
+          </div>
+
+          <%# ── accordion body ───────────────────────────────────────────── %>
+          <div class="pcu-tracker-bd <%= 'open' if sel_cfs.any? %>"
+               id="pcu-body-<%= tid %>">
+
+            <%# Hidden checkboxes – actual form values ──────────────────── %>
+            <% all_cfs.each do |cf| %>
+              <%= check_box_tag "settings[tracker_popup_fields][#{tid}][]",
+                    cf.id.to_s,
+                    sel_ids.include?(cf.id.to_s),
+                    id:    "pcu-cb-#{tid}-#{cf.id}",
+                    class: 'pcu-hidden-cb',
+                    style: 'display:none',
+                    data:  {
+                      tid:      tid,
+                      cfid:     cf.id,
+                      name:     cf.name,
+                      required: cf.is_required ? '1' : '0'
+                    } %>
+            <% end %>
+
+            <%# Selected fields chip list ───────────────────────────────── %>
+            <div style="margin-bottom:6px;font-size:12px;color:#555;font-weight:bold;">
+              Fields shown in popup:
+            </div>
+            <div class="pcu-chips" id="pcu-chips-<%= tid %>">
+              <% if sel_cfs.empty? %>
+                <span class="pcu-chips-empty" id="pcu-empty-<%= tid %>">
+                  No fields added yet — use the dropdown below to add fields.
+                </span>
+              <% else %>
+                <% sel_cfs.each do |cf| %>
+                  <span class="pcu-chip" id="pcu-chip-<%= tid %>-<%= cf.id %>">
+                    <%= cf.name %>
+                    <% if cf.is_required %>
+                      <span class="pcu-chip-req">required</span>
+                    <% else %>
+                      <span class="pcu-chip-opt">optional</span>
+                    <% end %>
+                    <button type="button" class="pcu-chip-remove"
+                            title="Remove"
+                            onclick="pcuRemove(<%= tid %>, <%= cf.id %>)">×</button>
+                  </span>
+                <% end %>
+              <% end %>
+            </div>
+
+            <%# Add-field row ───────────────────────────────────────────── %>
+            <% if all_cfs.empty? %>
+              <p class="pcu-hint">No custom fields are associated with this tracker.</p>
+            <% else %>
+              <div class="pcu-add-row">
+                <select id="pcu-sel-<%= tid %>">
+                  <option value="">— select a field to add —</option>
+                  <% avail_cfs.each do |cf| %>
+                    <option value="<%= cf.id %>"
+                            data-name="<%= cf.name %>"
+                            data-required="<%= cf.is_required ? '1' : '0' %>">
+                      <%= cf.name %> (<%= cf.is_required ? 'required' : 'optional' %>)
+                    </option>
+                  <% end %>
+                </select>
+                <button type="button" class="pcu-add-btn"
+                        onclick="pcuAdd(<%= tid %>)">+ Add</button>
+              </div>
+              <p class="pcu-hint" style="margin-top:6px;">
+                Fields marked <em>required</em> in Redmine are always shown in the popup
+                when the parent cannot supply a value, even if not added here.
+              </p>
+            <% end %>
+
+          </div><%# /pcu-tracker-bd %>
+        </div><%# /pcu-tracker %>
+      <% end %>
+    <% end %>
+
+  </div><%# /pcu-box-body %>
+</div><%# /pcu-box %>
+
+<script>
+/* ── Accordion ──────────────────────────────────────────────────────────── */
+function pcuToggle(tid) {
+  var body  = document.getElementById('pcu-body-'  + tid);
+  var arrow = document.getElementById('pcu-arrow-' + tid);
+  if (body.classList.contains('open')) {
+    body.classList.remove('open');
+    arrow.textContent = '▼';
+  } else {
+    body.classList.add('open');
+    arrow.textContent = '▲';
+  }
+}
+
+/* ── Add field ──────────────────────────────────────────────────────────── */
+function pcuAdd(tid) {
+  var sel    = document.getElementById('pcu-sel-' + tid);
+  var cfId   = sel.value;
+  if (!cfId) { sel.focus(); return; }
+
+  var opt      = sel.options[sel.selectedIndex];
+  var cfName   = opt.dataset.name   || opt.text;
+  var isReq    = opt.dataset.required === '1';
+  var badgeCls = isReq ? 'pcu-chip-req' : 'pcu-chip-opt';
+  var badgeTxt = isReq ? 'required'     : 'optional';
+
+  /* tick the hidden checkbox */
+  var cb = document.getElementById('pcu-cb-' + tid + '-' + cfId);
+  if (cb) cb.checked = true;
+
+  /* remove the option from the dropdown */
+  sel.remove(sel.selectedIndex);
+  sel.value = '';
+
+  /* hide the "no fields" placeholder */
+  var empty = document.getElementById('pcu-empty-' + tid);
+  if (empty) empty.style.display = 'none';
+
+  /* build and append chip */
+  var chip = document.createElement('span');
+  chip.className = 'pcu-chip';
+  chip.id        = 'pcu-chip-' + tid + '-' + cfId;
+  chip.innerHTML =
+    pcuEsc(cfName) +
+    ' <span class="' + badgeCls + '">' + badgeTxt + '</span>' +
+    ' <button type="button" class="pcu-chip-remove" title="Remove"' +
+    '         onclick="pcuRemove(' + tid + ',' + cfId + ')">&#215;</button>';
+  document.getElementById('pcu-chips-' + tid).appendChild(chip);
+
+  pcuUpdateCount(tid);
+}
+
+/* ── Remove field ───────────────────────────────────────────────────────── */
+function pcuRemove(tid, cfId) {
+  /* untick the hidden checkbox */
+  var cb = document.getElementById('pcu-cb-' + tid + '-' + cfId);
+  if (!cb) return;
+  cb.checked = false;
+
+  /* rebuild option text from data attrs and add it back to dropdown */
+  var cfName = cb.dataset.name;
+  var isReq  = cb.dataset.required === '1';
+  var sel    = document.getElementById('pcu-sel-' + tid);
+  if (sel) {
+    var newOpt = document.createElement('option');
+    newOpt.value              = cfId;
+    newOpt.dataset.name       = cfName;
+    newOpt.dataset.required   = cb.dataset.required;
+    newOpt.textContent        = cfName + ' (' + (isReq ? 'required' : 'optional') + ')';
+    /* insert alphabetically (skip the blank first option) */
+    var inserted = false;
+    for (var i = 1; i < sel.options.length; i++) {
+      if (sel.options[i].text.toLowerCase() > newOpt.text.toLowerCase()) {
+        sel.insertBefore(newOpt, sel.options[i]);
+        inserted = true;
+        break;
+      }
+    }
+    if (!inserted) sel.appendChild(newOpt);
+  }
+
+  /* remove the chip */
+  var chip = document.getElementById('pcu-chip-' + tid + '-' + cfId);
+  if (chip) chip.remove();
+
+  /* show "no fields" placeholder if chips area is now empty */
+  var chips = document.querySelectorAll('#pcu-chips-' + tid + ' .pcu-chip');
+  if (chips.length === 0) {
+    var empty = document.getElementById('pcu-empty-' + tid);
+    if (empty) {
+      empty.style.display = '';
+    } else {
+      var span = document.createElement('span');
+      span.className = 'pcu-chips-empty';
+      span.id        = 'pcu-empty-' + tid;
+      span.textContent = 'No fields added yet — use the dropdown below to add fields.';
+      document.getElementById('pcu-chips-' + tid).appendChild(span);
+    }
+  }
+
+  pcuUpdateCount(tid);
+}
+
+/* ── Update badge counter in accordion header ───────────────────────────── */
+function pcuUpdateCount(tid) {
+  var chips = document.querySelectorAll('#pcu-chips-' + tid + ' .pcu-chip');
+  var badge = document.getElementById('pcu-count-' + tid);
+  if (!badge) return;
+  var n = chips.length;
+  badge.textContent = n;
+  badge.nextElementSibling.textContent = ' field' + (n === 1 ? '' : 's') + ' in popup';
+}
+
+/* ── HTML-escape helper ─────────────────────────────────────────────────── */
+function pcuEsc(str) {
+  return String(str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
