@@ -1,0 +1,34 @@
+<% settings = Setting.plugin_redmine_notification_bell %>
+
+<div class="nb-settings">
+
+  <p>
+    <label class="nb-settings-label">
+      <%= check_box_tag 'settings[sound_enabled]', '1',
+            settings['sound_enabled'].to_s == '1',
+            id: 'nb_sound_enabled' %>
+      <%= l(:nb_setting_sound_enabled) %>
+    </label>
+    <em class="nb-settings-hint"><%= l(:nb_setting_sound_enabled_hint) %></em>
+  </p>
+
+  <p>
+    <label for="nb_max_notifications"><%= l(:nb_setting_max_notifications) %></label>
+    <%= number_field_tag 'settings[max_notifications]',
+          settings['max_notifications'].presence || '20',
+          id:    'nb_max_notifications',
+          min:   1,
+          max:   100,
+          step:  1,
+          style: 'width:70px;' %>
+    <em class="nb-settings-hint"><%= l(:nb_setting_max_notifications_hint) %></em>
+  </p>
+
+</div>
+
+<style>
+  .nb-settings p        { margin: 10px 0; }
+  .nb-settings-label    { display: inline-flex; align-items: center; gap: 6px; font-weight: normal; cursor: pointer; }
+  .nb-settings-hint     { display: block; margin-top: 2px; margin-left: 22px; color: #777; font-size: 12px; }
+  .nb-settings label[for="nb_max_notifications"] { font-weight: normal; margin-right: 6px; }
+</style>

@@ -1,0 +1,5 @@
+en:
+  nb_setting_sound_enabled:           "Enable notification sound"
+  nb_setting_sound_enabled_hint:      "Play a sound when a new @mention notification arrives."
+  nb_setting_max_notifications:       "Maximum notifications to keep"
+  nb_setting_max_notifications_hint:  "Older notifications are removed automatically once this limit is reached (1–100)."

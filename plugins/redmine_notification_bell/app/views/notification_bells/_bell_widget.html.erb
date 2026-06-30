@@ -1,0 +1,56 @@
+<% if User.current.logged? %>
+<div id="nb-bell-wrapper">
+  <button id="nb-bell-btn" class="nb-bell-btn" aria-label="Notifications" title="Notifications">
+    <span class="nb-bell-icon">
+      <svg xmlns="http://www.w3.org/2000/svg" width="33" height="33" viewBox="0 0 100 100" fill="none">
+        <!-- shadow -->
+        <rect x="30" y="22" width="52" height="66" rx="5" fill="#c8c8c8" opacity="0.5"/>
+        <!-- board body -->
+        <rect x="22" y="18" width="52" height="66" rx="5" fill="#6fa8dc" stroke="#2d3e50" stroke-width="3.5"/>
+        <!-- paper -->
+        <rect x="28" y="26" width="40" height="52" rx="3" fill="#eef4ff" stroke="#2d3e50" stroke-width="2.5"/>
+        <!-- clip base -->
+        <rect x="38" y="12" width="24" height="14" rx="4" fill="#e84040" stroke="#2d3e50" stroke-width="3"/>
+        <!-- clip hole -->
+        <circle cx="50" cy="15" r="3" fill="#2d3e50"/>
+        <!-- clip prongs -->
+        <rect x="42" y="18" width="4" height="8" rx="2" fill="#2d3e50"/>
+        <rect x="54" y="18" width="4" height="8" rx="2" fill="#2d3e50"/>
+        <!-- checkbox 1 checked -->
+        <rect x="33" y="36" width="8" height="8" rx="1.5" fill="#c8c8c8" stroke="#2d3e50" stroke-width="1.8"/>
+        <polyline points="34.5,40 36.5,42.5 40,37.5" stroke="#2d3e50" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        <!-- lines row 1 -->
+        <line x1="46" y1="38" x2="63" y2="38" stroke="#2d3e50" stroke-width="2" stroke-linecap="round"/>
+        <line x1="46" y1="43" x2="58" y2="43" stroke="#2d3e50" stroke-width="2" stroke-linecap="round"/>
+        <!-- checkbox 2 -->
+        <rect x="33" y="50" width="8" height="8" rx="1.5" fill="#c8c8c8" stroke="#2d3e50" stroke-width="1.8"/>
+        <!-- lines row 2 -->
+        <line x1="46" y1="52" x2="63" y2="52" stroke="#2d3e50" stroke-width="2" stroke-linecap="round"/>
+        <line x1="46" y1="57" x2="56" y2="57" stroke="#2d3e50" stroke-width="2" stroke-linecap="round"/>
+        <!-- checkbox 3 -->
+        <rect x="33" y="64" width="8" height="8" rx="1.5" fill="#c8c8c8" stroke="#2d3e50" stroke-width="1.8"/>
+        <!-- lines row 3 -->
+        <line x1="46" y1="66" x2="62" y2="66" stroke="#2d3e50" stroke-width="2" stroke-linecap="round"/>
+        <line x1="46" y1="71" x2="54" y2="71" stroke="#2d3e50" stroke-width="2" stroke-linecap="round"/>
+        <!-- pencil body -->
+        <rect x="14" y="44" width="10" height="36" rx="2" fill="#b8cc1a" stroke="#2d3e50" stroke-width="2.5" transform="rotate(-35 14 44)"/>
+        <!-- pencil eraser -->
+        <rect x="14" y="44" width="10" height="7" rx="1.5" fill="#e84040" stroke="#2d3e50" stroke-width="2.5" transform="rotate(-35 14 44)"/>
+        <!-- pencil tip -->
+        <polygon points="23.5,76 19,82 28,79" fill="#f5e6c0" stroke="#2d3e50" stroke-width="1.8" stroke-linejoin="round" transform="rotate(-35 23.5 76)"/>
+      </svg>
+    </span>
+    <span id="nb-badge" class="nb-badge" style="display:none;">0</span>
+  </button>
+
+  <div id="nb-panel" class="nb-panel" style="display:none;">
+    <div class="nb-panel-header">
+      <span class="nb-panel-title">Notifications</span>
+      <button id="nb-mark-all" class="nb-mark-all-btn" title="Mark all as read">&#10003; All read</button>
+    </div>
+    <div id="nb-list" class="nb-list">
+      <div class="nb-empty">Loading&hellip;</div>
+    </div>
+  </div>
+</div>
+<% end %>

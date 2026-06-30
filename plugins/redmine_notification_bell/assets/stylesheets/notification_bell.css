@@ -1,0 +1,208 @@
+/* ── Notification Bell Plugin ─────────────────────────────── */
+
+#nb-bell-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+/* Bell button */
+.nb-bell-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 4px;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  transition: background 0.15s;
+}
+
+.nb-bell-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.nb-bell-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  line-height: 1;
+}
+
+/* Unread badge */
+.nb-badge {
+  position: absolute;
+  top: -2px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  background: #e74c3c;
+  color: #fff;
+  font-size: 10px;
+  font-weight: bold;
+  border-radius: 8px;
+  padding: 0 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  pointer-events: none;
+}
+
+/* ── Notification Panel ──────────────────────────────────── */
+
+.nb-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 340px;
+  max-height: 460px;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.18);
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-size: 13px;
+  color: #333;
+}
+
+.nb-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px 8px;
+  border-bottom: 1px solid #eee;
+  background: #f7f7f7;
+  flex-shrink: 0;
+}
+
+.nb-panel-title {
+  font-weight: bold;
+  font-size: 14px;
+  color: #444;
+}
+
+.nb-mark-all-btn {
+  background: none;
+  border: 1px solid #bbb;
+  border-radius: 3px;
+  padding: 2px 8px;
+  cursor: pointer;
+  font-size: 11px;
+  color: #555;
+  transition: background 0.15s, color 0.15s;
+}
+
+.nb-mark-all-btn:hover {
+  background: #4a90d9;
+  color: #fff;
+  border-color: #4a90d9;
+}
+
+/* ── Notification List ───────────────────────────────────── */
+
+.nb-list {
+  overflow-y: auto;
+  flex: 1;
+}
+
+.nb-empty {
+  padding: 24px 14px;
+  text-align: center;
+  color: #888;
+  font-size: 13px;
+}
+
+/* Individual notification item */
+.nb-item {
+  display: block;
+  padding: 10px 14px;
+  border-bottom: 1px solid #f0f0f0;
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+  transition: background 0.12s;
+  position: relative;
+}
+
+.nb-item:last-child {
+  border-bottom: none;
+}
+
+.nb-item:hover {
+  background: #f0f6ff;
+  text-decoration: none;
+}
+
+.nb-item.nb-unread {
+  background: #eef5ff;
+}
+
+.nb-item.nb-unread:hover {
+  background: #ddeeff;
+}
+
+/* Unread dot indicator */
+.nb-item.nb-unread::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 6px;
+  height: 6px;
+  background: #4a90d9;
+  border-radius: 50%;
+}
+
+.nb-item-subject {
+  font-weight: 600;
+  font-size: 12px;
+  color: #2a6db5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+  margin-bottom: 3px;
+}
+
+.nb-item-meta {
+  font-size: 11px;
+  color: #777;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.nb-item-author {
+  font-style: italic;
+}
+
+.nb-item-time {
+  color: #aaa;
+}
+
+/* Bell ring animation */
+@keyframes nb-ring {
+  0%   { transform: rotate(0deg) scale(1); }
+  15%  { transform: rotate(-12deg) scale(1.1); }
+  35%  { transform: rotate(10deg) scale(1.1); }
+  55%  { transform: rotate(-6deg) scale(1.05); }
+  75%  { transform: rotate(4deg) scale(1.02); }
+  100% { transform: rotate(0deg) scale(1); }
+}
+
+.nb-bell-icon.nb-ringing {
+  animation: nb-ring 0.65s ease;
+  transform-origin: center top;
+}
