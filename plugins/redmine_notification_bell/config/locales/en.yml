@@ -3,3 +3,5 @@ en:
   nb_setting_sound_enabled_hint:      "Play a sound when a new @mention notification arrives."
   nb_setting_max_notifications:       "Maximum notifications to keep"
   nb_setting_max_notifications_hint:  "Older notifications are removed automatically once this limit is reached (1–100)."
+  nb_setting_preview_length:          "Message preview length (characters)"
+  nb_setting_preview_length_hint:     "Number of characters shown as a preview of the note content (20–300)."

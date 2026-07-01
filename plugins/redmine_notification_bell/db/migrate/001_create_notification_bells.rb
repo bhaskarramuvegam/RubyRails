@@ -8,7 +8,7 @@ class CreateNotificationBells < ActiveRecord::Migration[5.2]
       t.string   :issue_subject,  null: false, default: ''
       t.string   :author_name,    null: false, default: ''
       t.boolean  :read,           null: false, default: false
-      t.timestamps null: false
+      t.timestamps null: false,
     end
 
     add_index :notification_bells, :user_id

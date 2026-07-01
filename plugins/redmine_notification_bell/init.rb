@@ -10,7 +10,8 @@ Redmine::Plugin.register :redmine_notification_bell do
 
   settings default: {
     'sound_enabled'      => '1',
-    'max_notifications'  => '20'
+    'max_notifications'  => '20',
+    'preview_length'     => '100'
   }, partial: 'settings/redmine_notification_bell'
 end
 

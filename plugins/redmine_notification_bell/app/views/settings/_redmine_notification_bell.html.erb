@@ -24,6 +24,19 @@
     <em class="nb-settings-hint"><%= l(:nb_setting_max_notifications_hint) %></em>
   </p>
 
+
+  <p>
+    <label for="nb_preview_length"><%= l(:nb_setting_preview_length) %></label>
+    <%= number_field_tag 'settings[preview_length]',
+          settings['preview_length'].presence || '100',
+          id:    'nb_preview_length',
+          min:   20,
+          max:   300,
+          step:  10,
+          style: 'width:70px;' %>
+    <em class="nb-settings-hint"><%= l(:nb_setting_preview_length_hint) %></em>
+  </p>
+
 </div>
 
 <style>

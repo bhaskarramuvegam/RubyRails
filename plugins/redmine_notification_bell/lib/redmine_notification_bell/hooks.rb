@@ -10,15 +10,18 @@ module RedmineNotificationBell
         {}
       end
 
-      sound_enabled = plugin_settings['sound_enabled'].to_s == '1'
-      max_items     = plugin_settings['max_notifications'].to_i
-      max_items     = 20 unless max_items.between?(1, 100)
+      sound_enabled  = plugin_settings['sound_enabled'].to_s == '1'
+      max_items      = plugin_settings['max_notifications'].to_i
+      max_items      = 20 unless max_items.between?(1, 100)
+      preview_length = plugin_settings['preview_length'].to_i
+      preview_length = 100 unless preview_length.between?(20, 300)
 
       config_js = <<~JS
         <script>
           window.NotificationBellConfig = {
             soundEnabled:     #{sound_enabled ? 'true' : 'false'},
-            maxNotifications: #{max_items}
+            maxNotifications: #{max_items},
+            previewLength:    #{preview_length}
           };
         </script>
       JS

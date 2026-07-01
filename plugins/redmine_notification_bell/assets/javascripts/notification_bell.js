@@ -2,23 +2,38 @@
   'use strict';
 
   // ── Config (overridden by window.NotificationBellConfig) ────
-  var cfg = window.NotificationBellConfig || {};
-  var POLL_INTERVAL_MS     = 30000;
-  var SOUND_ENABLED        = cfg.soundEnabled !== false;   // default true
-  var MAX_NOTIFICATIONS    = cfg.maxNotifications || 20;
-  var prevUnreadCount      = -1;  // -1 = first load
+  var cfg              = window.NotificationBellConfig || {};
+  var POLL_INTERVAL_MS = 30000;
+  var SOUND_ENABLED    = cfg.soundEnabled !== false;
+  var MAX_NOTIFICATIONS = cfg.maxNotifications || 20;
 
-  // ── DOM refs (set after DOMContentLoaded) ───────────────────
+  var prevUnreadCount  = -1;
+  var readVisible      = false; // improvement 4: read items hidden by default
+
+  // ── DOM refs ─────────────────────────────────────────────────
   var wrapper, bellBtn, bellIcon, badge, panel, list, markAllBtn;
 
-  // ── Web Audio notification sound ────────────────────────────
+  // ── IST formatter (improvement 1) ────────────────────────────
+  // Converts an ISO 8601 UTC string to IST (UTC+5:30) display string.
+  function formatIST(iso) {
+    var d = new Date(iso);
+    if (isNaN(d)) return iso;
+    var ist = new Date(d.getTime() + 5.5 * 60 * 60 * 1000);
+    var pad = function (n) { return String(n).padStart(2, '0'); };
+    return ist.getUTCFullYear() + '-' +
+           pad(ist.getUTCMonth() + 1) + '-' +
+           pad(ist.getUTCDate()) + ' ' +
+           pad(ist.getUTCHours()) + ':' +
+           pad(ist.getUTCMinutes());
+  }
+
+  // ── Web Audio notification sound ─────────────────────────────
   function playNotificationSound() {
     try {
       var ctx = new (window.AudioContext || window.webkitAudioContext)();
-
       function beep(freq, start, duration, vol) {
-        var osc   = ctx.createOscillator();
-        var gain  = ctx.createGain();
+        var osc  = ctx.createOscillator();
+        var gain = ctx.createGain();
         osc.connect(gain);
         gain.connect(ctx.destination);
         osc.type = 'sine';
@@ -28,16 +43,13 @@
         osc.start(ctx.currentTime + start);
         osc.stop(ctx.currentTime + start + duration);
       }
-
-      beep(880, 0,    0.12, 0.4);
+      beep(880,  0,    0.12, 0.4);
       beep(1100, 0.13, 0.12, 0.35);
       beep(1320, 0.26, 0.18, 0.3);
-    } catch (e) {
-      // Audio not available — silently ignore
-    }
+    } catch (e) { /* audio not available */ }
   }
 
-  // ── Badge helpers ────────────────────────────────────────────
+  // ── Badge ────────────────────────────────────────────────────
   function updateBadge(count) {
     if (!badge) return;
     if (count > 0) {
@@ -51,7 +63,6 @@
   function ringBell() {
     if (!bellIcon) return;
     bellIcon.classList.remove('nb-ringing');
-    // Force reflow so the animation restarts
     void bellIcon.offsetWidth;
     bellIcon.classList.add('nb-ringing');
     bellIcon.addEventListener('animationend', function () {
@@ -105,38 +116,98 @@
     xhr.send();
   }
 
-  // ── Render the notification items ────────────────────────────
+  // ── Render the notification items (improvements 2, 3, 4) ──────
   function renderList(notifications) {
     if (!list) return;
+
+    var unread = notifications.filter(function (n) { return !n.read; });
+    var read   = notifications.filter(function (n) { return  n.read; });
+
     if (!notifications.length) {
       list.innerHTML = '<div class="nb-empty">No notifications yet.</div>';
       return;
     }
 
     list.innerHTML = '';
-    notifications.forEach(function (n) {
-      var item = document.createElement('a');
-      item.href = n.url;
-      item.className = 'nb-item' + (n.read ? '' : ' nb-unread');
-      item.setAttribute('data-id', n.id);
-      item.setAttribute('data-read', n.read ? '1' : '0');
 
-      item.innerHTML =
-        '<span class="nb-item-subject">#' + n.issue_id + ' &ndash; ' + escapeHtml(n.issue_subject) + '</span>' +
-        '<span class="nb-item-meta">' +
-          '<span class="nb-item-author">Mentioned by ' + escapeHtml(n.author_name) + '</span>' +
-          '<span class="nb-item-time">' + escapeHtml(n.created_at) + '</span>' +
-        '</span>';
+    // Render unread items
+    if (!unread.length) {
+      var empty = document.createElement('div');
+      empty.className = 'nb-empty';
+      empty.textContent = 'No new notifications.';
+      list.appendChild(empty);
+    } else {
+      unread.forEach(function (n) { list.appendChild(buildItem(n)); });
+    }
 
-      item.addEventListener('click', function (e) {
-        if (item.getAttribute('data-read') === '0') {
-          markRead(n.id, item);
-        }
-        closePanel();
+    // Render read items with toggle (improvement 4)
+    if (read.length) {
+      var readSection = document.createElement('div');
+      readSection.id = 'nb-read-section';
+      readSection.style.display = readVisible ? 'block' : 'none';
+      read.forEach(function (n) { readSection.appendChild(buildItem(n)); });
+      list.appendChild(readSection);
+
+      var toggleBtn = document.createElement('button');
+      toggleBtn.className = 'nb-toggle-read';
+      toggleBtn.id = 'nb-toggle-read-btn';
+      updateToggleLabel(toggleBtn, read.length);
+      toggleBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        readVisible = !readVisible;
+        readSection.style.display = readVisible ? 'block' : 'none';
+        updateToggleLabel(toggleBtn, read.length);
       });
+      list.appendChild(toggleBtn);
+    }
+  }
 
-      list.appendChild(item);
+  function updateToggleLabel(btn, count) {
+    btn.textContent = readVisible
+      ? '▲ Hide read (' + count + ')'
+      : '▼ Show read (' + count + ')';
+  }
+
+  // ── Build a single notification item (improvements 2 & 3) ────
+  function buildItem(n) {
+    var item = document.createElement('a');
+    item.href = n.url;
+    item.className = 'nb-item' + (n.read ? '' : ' nb-unread');
+    item.setAttribute('data-id', n.id);
+    item.setAttribute('data-read', n.read ? '1' : '0');
+
+    // improvement 2: show note preview
+    var previewHtml = n.note_preview
+      ? '<span class="nb-item-preview">' + escapeHtml(n.note_preview) + '</span>'
+      : '';
+
+    item.innerHTML =
+      '<span class="nb-item-subject">#' + n.issue_id + ' – ' + escapeHtml(n.issue_subject) + '</span>' +
+      previewHtml +
+      '<span class="nb-item-meta">' +
+        '<span class="nb-item-author">Mentioned by ' + escapeHtml(n.author_name) + '</span>' +
+        '<span class="nb-item-time">' + formatIST(n.created_at) + '</span>' +  // improvement 1
+      '</span>';
+
+    item.addEventListener('click', function (e) {
+      e.preventDefault();
+
+      if (item.getAttribute('data-read') === '0') {
+        markRead(n.id, item);
+      }
+      closePanel();
+
+      // improvement 3: force full reload when navigating within the same issue
+      var onSameIssue = window.location.pathname === '/issues/' + n.issue_id;
+      if (onSameIssue) {
+        window.location.replace(n.url);
+        window.location.reload(true);
+      } else {
+        window.location.href = n.url;
+      }
     });
+
+    return item;
   }
 
   // ── Mark single notification as read ─────────────────────────
@@ -175,12 +246,7 @@
       if (xhr.status === 200) {
         updateBadge(0);
         prevUnreadCount = 0;
-        // Update all items in the list to read
-        var items = list.querySelectorAll('.nb-item.nb-unread');
-        items.forEach(function (el) {
-          el.classList.remove('nb-unread');
-          el.setAttribute('data-read', '1');
-        });
+        fetchNotifications(); // re-render so read items move to hidden section
       }
     };
     xhr.send();
@@ -195,7 +261,6 @@
     xhr.setRequestHeader('Cache-Control', 'no-cache');
     xhr.onload = function () {
       if (xhr.status === 401 || xhr.status === 403) {
-        // Session expired — hide the widget rather than flooding the console
         if (wrapper) wrapper.style.display = 'none';
         return;
       }
@@ -203,21 +268,17 @@
         try {
           var data  = JSON.parse(xhr.responseText);
           var count = data.unread_count || 0;
-
-          // New notifications arrived since last poll
           if (prevUnreadCount !== -1 && count > prevUnreadCount) {
             if (SOUND_ENABLED) playNotificationSound();
             ringBell();
-            // Refresh open panel immediately
             if (isPanelOpen()) fetchNotifications();
           }
-
           updateBadge(count);
           prevUnreadCount = count;
-        } catch (e) { /* ignore parse errors */ }
+        } catch (e) { /* ignore */ }
       }
     };
-    xhr.onerror = function () { /* network error — skip */ };
+    xhr.onerror = function () { /* network error */ };
     xhr.send();
   }
 
@@ -230,11 +291,9 @@
       .replace(/"/g, '&quot;');
   }
 
-  // ── Position the bell widget next to the search box ──────────
+  // ── Position widget next to the search box ───────────────────
   function positionBellWidget() {
     if (!wrapper) return;
-
-    // Try common Redmine search form selectors
     var searchForm =
       document.querySelector('#search-form') ||
       document.querySelector('form[action*="search"]') ||
@@ -245,7 +304,6 @@
       searchForm.parentNode.insertBefore(wrapper, searchForm);
       wrapper.style.display = 'inline-flex';
     } else {
-      // Fallback: keep it in the top-right corner as fixed overlay
       wrapper.style.position = 'fixed';
       wrapper.style.top      = '8px';
       wrapper.style.right    = '12px';
@@ -264,17 +322,15 @@
     list       = document.getElementById('nb-list');
     markAllBtn = document.getElementById('nb-mark-all');
 
-    if (!wrapper) return; // User not logged in — nothing to do
+    if (!wrapper) return;
 
     positionBellWidget();
 
-    // Bell button toggle
     bellBtn.addEventListener('click', function (e) {
       e.stopPropagation();
       isPanelOpen() ? closePanel() : openPanel();
     });
 
-    // Mark-all button
     if (markAllBtn) {
       markAllBtn.addEventListener('click', function (e) {
         e.stopPropagation();
@@ -282,17 +338,11 @@
       });
     }
 
-    // Close panel when clicking outside
     document.addEventListener('click', function (e) {
-      if (wrapper && !wrapper.contains(e.target)) {
-        closePanel();
-      }
+      if (wrapper && !wrapper.contains(e.target)) closePanel();
     });
 
-    // Initial count fetch
     pollCount();
-
-    // Periodic polling
     setInterval(pollCount, POLL_INTERVAL_MS);
   }
 

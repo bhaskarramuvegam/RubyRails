@@ -192,6 +192,37 @@
   color: #aaa;
 }
 
+/* Note preview text */
+.nb-item-preview {
+  font-size: 11px;
+  color: #888;
+  display: block;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Show/hide read toggle button */
+.nb-toggle-read {
+  display: block;
+  width: 100%;
+  padding: 8px 14px;
+  text-align: center;
+  font-size: 11px;
+  color: #666;
+  background: #f7f7f7;
+  border: none;
+  border-top: 1px solid #eee;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.nb-toggle-read:hover {
+  background: #eef0f3;
+  color: #333;
+}
+
 /* Bell ring animation */
 @keyframes nb-ring {
   0%   { transform: rotate(0deg) scale(1); }
