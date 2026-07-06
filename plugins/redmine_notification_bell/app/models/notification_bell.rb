@@ -23,6 +23,29 @@ class NotificationBell < ActiveRecord::Base
     DEFAULT_PREVIEW
   end
 
+  # Fast path called in the HTTP request cycle.
+  # Validates the journal has @mentions, then inserts ONE row into the async
+  # queue (~1ms).  The unique index on journal_id silently discards any
+  # duplicate enqueue attempts (after_commit + controller hook both fire for
+  # the same save; only one job ends up being processed).
+  def self.enqueue_for_mentions(journal)
+    return unless journal.notes.present?
+    return unless journal.journalized_type == 'Issue'
+    return unless journal.notes.match?(/(?<!\S)@[\w.\-]+/)
+
+    NotificationBellQueue.create!(
+      journal_id: journal.id,
+      status:     NotificationBellQueue::PENDING
+    )
+    Rails.logger.info "[NotificationBell] Enqueued job for journal #{journal.id}"
+  rescue ActiveRecord::RecordNotUnique
+    # Duplicate — after_commit and controller hook both fired. Safe to ignore.
+  rescue => e
+    Rails.logger.error "[NotificationBell] enqueue_for_mentions error: #{e.class}: #{e.message}"
+  end
+
+  # Worker path: called by NotificationBellWorker in a background thread,
+  # fully decoupled from the HTTP request/response cycle.
   def self.create_for_mentions(journal)
     return unless journal.notes.present?
     return unless journal.journalized_type == 'Issue'
@@ -31,30 +54,24 @@ class NotificationBell < ActiveRecord::Base
     return unless issue
 
     logins = journal.notes.scan(/(?<!\S)@([\w.\-]+)/).flatten.uniq
-    Rails.logger.error "[NotificationBell] create_for_mentions: journal=#{journal.id} issue=##{issue.id} logins=#{logins.inspect}"
+    Rails.logger.info "[NotificationBell] create_for_mentions: journal=#{journal.id} issue=##{issue.id} logins=#{logins.inspect}"
     return if logins.empty?
 
-    # Single COUNT query — resolves instantly with index even on issues with
-    # thousands of journals. Counts all journals up to and including this one.
     note_index = Journal
                    .where(journalized_type: 'Issue', journalized_id: issue.id)
                    .where('created_on < :t OR (created_on = :t AND id <= :id)',
                           t: journal.created_on, id: journal.id)
                    .count
 
-    author_name   = journal.user&.name.to_s
-    note_preview  = journal.notes.to_s.gsub(/\r?\n/, ' ').squish.truncate(preview_length)
-    max_notif     = max_per_user   # cache outside loop — avoids repeated Setting DB call
+    author_name  = journal.user&.name.to_s
+    note_preview = journal.notes.to_s.gsub(/\r?\n/, ' ').squish.truncate(preview_length)
+    max_notif    = max_per_user
 
     logins.each do |login|
-      # find_by uses the unique index on login (exact match, instant).
-      # The LIKE fallback uses the text_pattern_ops index added by migration 003
-      # (index_users_on_login_text_pattern) — runs in milliseconds even on
-      # large user tables instead of doing a full sequential scan.
       mentioned_user = User.active.find_by(login: login) ||
                        User.active.where('login LIKE ?', "#{login}@%").first
       unless mentioned_user
-        Rails.logger.error "[NotificationBell] No active user for login='#{login}'"
+        Rails.logger.warn "[NotificationBell] No active user for login='#{login}'"
         next
       end
 
@@ -76,7 +93,7 @@ class NotificationBell < ActiveRecord::Base
       end
 
       if notification&.persisted?
-        Rails.logger.error "[NotificationBell] Created notification #{notification.id} for #{mentioned_user.login}"
+        Rails.logger.info "[NotificationBell] Created notification #{notification.id} for #{mentioned_user.login}"
         excess = where(user_id: mentioned_user.id)
                    .order(created_at: :desc, id: :desc)
                    .offset(max_notif)

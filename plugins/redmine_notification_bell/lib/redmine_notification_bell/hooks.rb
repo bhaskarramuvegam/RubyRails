@@ -38,14 +38,14 @@ module RedmineNotificationBell
       )
     end
 
-    # Backup path for 000_redmine_x_ux_upgrade which overrides the issues controller.
-    # after_commit on Journal covers the standard path; this catches any saves
-    # that bypass the Journal model callbacks.
-    # exists? inside create_for_mentions prevents duplicate notifications.
+    # Backup path for 000_redmine_x_ux_upgrade which overrides the issues
+    # controller, potentially bypassing Journal model callbacks.
+    # The unique index on notification_bell_jobs.journal_id ensures the
+    # after_commit + this hook never produce duplicate jobs.
     def controller_issues_edit_after_save(context = {})
       journal = context[:journal]
       return unless journal.present?
-      NotificationBell.create_for_mentions(journal)
+      NotificationBell.enqueue_for_mentions(journal)
     rescue => e
       Rails.logger.error "[NotificationBell] controller_issues_edit_after_save error: #{e.message}"
     end
@@ -53,7 +53,7 @@ module RedmineNotificationBell
     def controller_journals_new_after_save(context = {})
       journal = context[:journal]
       return unless journal.present?
-      NotificationBell.create_for_mentions(journal)
+      NotificationBell.enqueue_for_mentions(journal)
     rescue => e
       Rails.logger.error "[NotificationBell] controller_journals_new_after_save error: #{e.message}"
     end
@@ -62,7 +62,7 @@ module RedmineNotificationBell
       journal = context[:journal]
       return unless journal.present?
       return if journal.notes.blank?
-      NotificationBell.create_for_mentions(journal)
+      NotificationBell.enqueue_for_mentions(journal)
     rescue => e
       Rails.logger.error "[NotificationBell] controller_journals_edit_after_save error: #{e.message}"
     end
