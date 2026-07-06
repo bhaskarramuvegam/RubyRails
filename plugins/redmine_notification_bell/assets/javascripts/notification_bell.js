@@ -3,12 +3,46 @@
 
   // ── Config (overridden by window.NotificationBellConfig) ────
   var cfg              = window.NotificationBellConfig || {};
-  var POLL_INTERVAL_MS = 30000;
+  var POLL_INTERVAL_MS = 5000;
   var SOUND_ENABLED    = cfg.soundEnabled !== false;
   var MAX_NOTIFICATIONS = cfg.maxNotifications || 20;
 
   var prevUnreadCount  = -1;
-  var readVisible      = false; // improvement 4: read items hidden by default
+  var readVisible      = false;
+
+  // ── Scroll to note anchor on page load ───────────────────────
+  // When arriving from a notification click (_nb param present) the page's
+  // own JavaScript can reset scroll before the browser reaches the anchor.
+  // Re-apply the scroll after the page has fully settled.
+  (function scrollToNoteAnchor() {
+    var params = new URLSearchParams(window.location.search);
+    if (!params.has('_nb')) return;          // not a notification navigation
+    var hash = window.location.hash;         // e.g. "#note-3"
+    if (!hash) return;
+
+    function tryScroll(attemptsLeft) {
+      var target = document.querySelector(hash) ||
+                   document.querySelector('[id$="' + hash.replace('#', '') + '"]');
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        target.style.transition = 'background 0.5s';
+        target.style.background = '#fff9c4';
+        setTimeout(function () { target.style.background = ''; }, 3000);
+        // Remove _nb from the URL so a manual page reload doesn't re-trigger
+        // the scroll and highlight — it was only needed for the initial click.
+        history.replaceState(null, '', window.location.pathname + hash);
+      } else if (attemptsLeft > 0) {
+        setTimeout(function () { tryScroll(attemptsLeft - 1); }, 300);
+      }
+    }
+
+    // Start trying once the DOM is ready; retry up to 10 times (3 seconds total)
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', function () { tryScroll(10); });
+    } else {
+      setTimeout(function () { tryScroll(10); }, 100);
+    }
+  })();
 
   // ── DOM refs ─────────────────────────────────────────────────
   var wrapper, bellBtn, bellIcon, badge, panel, list, markAllBtn;
@@ -197,14 +231,16 @@
       }
       closePanel();
 
-      // improvement 3: force full reload when navigating within the same issue
+      // Split URL into path+query and hash parts (e.g. "/issues/88672" + "#note-3")
+      var hashIndex = n.url.indexOf('#');
+      var urlPath   = hashIndex >= 0 ? n.url.slice(0, hashIndex) : n.url;
+      var urlHash   = hashIndex >= 0 ? n.url.slice(hashIndex)    : '';
+
       var onSameIssue = window.location.pathname === '/issues/' + n.issue_id;
-      if (onSameIssue) {
-        window.location.replace(n.url);
-        window.location.reload(true);
-      } else {
-        window.location.href = n.url;
-      }
+      var sep = urlPath.indexOf('?') >= 0 ? '&' : '?';
+      // Always append _nb so the scroll-to-note script runs after page load.
+      // For same-page this also forces a full reload to show the latest content.
+      window.location.href = urlPath + sep + '_nb=' + n.id + urlHash;
     });
 
     return item;

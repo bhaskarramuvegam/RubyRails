@@ -1,8 +1,6 @@
 module RedmineNotificationBell
   class Hooks < Redmine::Hook::ViewListener
 
-    # ── View hooks ──────────────────────────────────────────────
-
     def view_layouts_base_html_head(context = {})
       plugin_settings = begin
         Setting.plugin_redmine_notification_bell
@@ -40,33 +38,33 @@ module RedmineNotificationBell
       )
     end
 
-    # ── Controller hooks — reliable journal creation detection ───
-    #
-    # Using controller hooks instead of a Journal model patch because
-    # Redmine's plugin loading order can cause after_commit patches to
-    # silently not register in production. Controller hooks are Redmine's
-    # official extension point and are guaranteed to fire.
-
-    # Fires after a user updates an issue (most common path for @mentions)
+    # Backup path for 000_redmine_x_ux_upgrade which overrides the issues controller.
+    # after_commit on Journal covers the standard path; this catches any saves
+    # that bypass the Journal model callbacks.
+    # exists? inside create_for_mentions prevents duplicate notifications.
     def controller_issues_edit_after_save(context = {})
       journal = context[:journal]
       return unless journal.present?
-
-      Rails.logger.info "[NotificationBell] controller_issues_edit_after_save: journal #{journal.id}"
       NotificationBell.create_for_mentions(journal)
     rescue => e
-      Rails.logger.error "[NotificationBell] controller_issues_edit_after_save error: #{e.message}\n#{e.backtrace.first(3).join("\n")}"
+      Rails.logger.error "[NotificationBell] controller_issues_edit_after_save error: #{e.message}"
     end
 
-    # Fires after a user edits an existing journal note via the journal UI
     def controller_journals_new_after_save(context = {})
       journal = context[:journal]
       return unless journal.present?
-
-      Rails.logger.info "[NotificationBell] controller_journals_new_after_save: journal #{journal.id}"
       NotificationBell.create_for_mentions(journal)
     rescue => e
-      Rails.logger.error "[NotificationBell] controller_journals_new_after_save error: #{e.message}\n#{e.backtrace.first(3).join("\n")}"
+      Rails.logger.error "[NotificationBell] controller_journals_new_after_save error: #{e.message}"
+    end
+
+    def controller_journals_edit_after_save(context = {})
+      journal = context[:journal]
+      return unless journal.present?
+      return if journal.notes.blank?
+      NotificationBell.create_for_mentions(journal)
+    rescue => e
+      Rails.logger.error "[NotificationBell] controller_journals_edit_after_save error: #{e.message}"
     end
   end
 end

@@ -30,24 +30,27 @@ class NotificationBell < ActiveRecord::Base
     issue = Issue.find_by(id: journal.journalized_id)
     return unless issue
 
-    # (?<!\S) — @ must be preceded by whitespace or start-of-string
     logins = journal.notes.scan(/(?<!\S)@([\w.\-]+)/).flatten.uniq
-
     Rails.logger.error "[NotificationBell] create_for_mentions: journal=#{journal.id} issue=##{issue.id} logins=#{logins.inspect}"
-
     return if logins.empty?
 
-    note_journals = Journal
-                      .where(journalized_type: 'Issue', journalized_id: issue.id)
-                      .where.not(notes: [nil, ''])
-                      .order(:created_on, :id)
-                      .pluck(:id)
-    note_index = (note_journals.index(journal.id) || (note_journals.size - 1)) + 1
+    # Single COUNT query — resolves instantly with index even on issues with
+    # thousands of journals. Counts all journals up to and including this one.
+    note_index = Journal
+                   .where(journalized_type: 'Issue', journalized_id: issue.id)
+                   .where('created_on < :t OR (created_on = :t AND id <= :id)',
+                          t: journal.created_on, id: journal.id)
+                   .count
 
-    author_name  = journal.user&.name.to_s
-    note_preview = journal.notes.to_s.gsub(/\r?\n/, ' ').squish.truncate(preview_length)
+    author_name   = journal.user&.name.to_s
+    note_preview  = journal.notes.to_s.gsub(/\r?\n/, ' ').squish.truncate(preview_length)
+    max_notif     = max_per_user   # cache outside loop — avoids repeated Setting DB call
 
     logins.each do |login|
+      # find_by uses the unique index on login (exact match, instant).
+      # The LIKE fallback uses the text_pattern_ops index added by migration 003
+      # (index_users_on_login_text_pattern) — runs in milliseconds even on
+      # large user tables instead of doing a full sequential scan.
       mentioned_user = User.active.find_by(login: login) ||
                        User.active.where('login LIKE ?', "#{login}@%").first
       unless mentioned_user
@@ -73,15 +76,14 @@ class NotificationBell < ActiveRecord::Base
       end
 
       if notification&.persisted?
-        Rails.logger.error "[NotificationBell] Created notification #{notification.id} for #{mentioned_user.login} on issue ##{issue.id}"
-
+        Rails.logger.error "[NotificationBell] Created notification #{notification.id} for #{mentioned_user.login}"
         excess = where(user_id: mentioned_user.id)
                    .order(created_at: :desc, id: :desc)
-                   .offset(max_per_user)
+                   .offset(max_notif)
                    .pluck(:id)
         where(id: excess).delete_all if excess.any?
       else
-        Rails.logger.error "[NotificationBell] create failed for #{mentioned_user.login}: #{notification&.errors&.full_messages}"
+        Rails.logger.error "[NotificationBell] create failed: #{notification&.errors&.full_messages}"
       end
     end
   rescue => e
@@ -101,7 +103,7 @@ class NotificationBell < ActiveRecord::Base
       author_name:   author_name,
       note_preview:  note_preview.to_s,
       note_index:    note_index,
-      # Send as ISO 8601 so the browser can convert to any timezone
+      journal_id:    journal_id,
       created_at:    created_at.utc.iso8601,
       url:           issue_url
     }
