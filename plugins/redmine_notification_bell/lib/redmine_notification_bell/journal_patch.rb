@@ -14,7 +14,9 @@ module RedmineNotificationBell
     end
 
     def nb_enqueue_mentions_update
-      return unless previous_changes.key?('notes')
+      # saved_changes is reliable in after_commit across all Rails 5.x/6.x versions.
+      # previous_changes can be cleared before after_commit fires in some patch releases.
+      return unless saved_changes.key?('notes')
       return if notes.blank?
       NotificationBell.enqueue_for_mentions(self)
     rescue => e
