@@ -4,16 +4,30 @@
 
   <p>
     <label class="nb-settings-label">
+      <%= check_box_tag 'settings[plugin_enabled]', '1',
+            settings['plugin_enabled'].to_s == '1',
+            id: 'nb_plugin_enabled' %>
+      <strong>Enable Notification Plugin</strong>
+    </label>
+    <em class="nb-settings-hint">
+      When disabled, the bell icon is hidden and no notifications are queued or processed.
+    </em>
+  </p>
+
+  <hr style="margin: 12px 0; border: none; border-top: 1px solid #ddd;">
+
+  <p>
+    <label class="nb-settings-label">
       <%= check_box_tag 'settings[sound_enabled]', '1',
             settings['sound_enabled'].to_s == '1',
             id: 'nb_sound_enabled' %>
-      <%= l(:nb_setting_sound_enabled) %>
+      Enable notification sound
     </label>
-    <em class="nb-settings-hint"><%= l(:nb_setting_sound_enabled_hint) %></em>
+    <em class="nb-settings-hint">Plays a short sound when a new @mention arrives.</em>
   </p>
 
   <p>
-    <label for="nb_max_notifications"><%= l(:nb_setting_max_notifications) %></label>
+    <label for="nb_max_notifications">Max notifications to show</label>
     <%= number_field_tag 'settings[max_notifications]',
           settings['max_notifications'].presence || '20',
           id:    'nb_max_notifications',
@@ -21,12 +35,11 @@
           max:   100,
           step:  1,
           style: 'width:70px;' %>
-    <em class="nb-settings-hint"><%= l(:nb_setting_max_notifications_hint) %></em>
+    <em class="nb-settings-hint">Oldest notifications beyond this limit are removed automatically.</em>
   </p>
 
-
   <p>
-    <label for="nb_preview_length"><%= l(:nb_setting_preview_length) %></label>
+    <label for="nb_preview_length">Note preview length (characters)</label>
     <%= number_field_tag 'settings[preview_length]',
           settings['preview_length'].presence || '100',
           id:    'nb_preview_length',
@@ -34,7 +47,7 @@
           max:   300,
           step:  10,
           style: 'width:70px;' %>
-    <em class="nb-settings-hint"><%= l(:nb_setting_preview_length_hint) %></em>
+    <em class="nb-settings-hint">How many characters of the note are shown in the notification panel.</em>
   </p>
 
 </div>
@@ -43,5 +56,6 @@
   .nb-settings p        { margin: 10px 0; }
   .nb-settings-label    { display: inline-flex; align-items: center; gap: 6px; font-weight: normal; cursor: pointer; }
   .nb-settings-hint     { display: block; margin-top: 2px; margin-left: 22px; color: #777; font-size: 12px; }
-  .nb-settings label[for="nb_max_notifications"] { font-weight: normal; margin-right: 6px; }
+  .nb-settings label[for="nb_max_notifications"],
+  .nb-settings label[for="nb_preview_length"] { font-weight: normal; margin-right: 6px; }
 </style>

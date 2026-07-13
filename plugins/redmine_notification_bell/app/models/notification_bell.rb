@@ -9,6 +9,12 @@ class NotificationBell < ActiveRecord::Base
   DEFAULT_MAX     = 20
   DEFAULT_PREVIEW = 100
 
+  def self.plugin_enabled?
+    Setting.plugin_redmine_notification_bell['plugin_enabled'].to_s == '1'
+  rescue
+    true
+  end
+
   def self.max_per_user
     val = Setting.plugin_redmine_notification_bell['max_notifications'].to_i
     val.between?(1, 100) ? val : DEFAULT_MAX
@@ -29,6 +35,7 @@ class NotificationBell < ActiveRecord::Base
   # duplicate enqueue attempts (after_commit + controller hook both fire for
   # the same save; only one job ends up being processed).
   def self.enqueue_for_mentions(journal)
+    return unless plugin_enabled?
     return unless journal.notes.present?
     return unless journal.journalized_type == 'Issue'
     return unless journal.notes.match?(/(?<!\S)@[\w.\-]+/)

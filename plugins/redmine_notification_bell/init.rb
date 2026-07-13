@@ -9,6 +9,7 @@ Redmine::Plugin.register :redmine_notification_bell do
   requires_redmine version_or_higher: '4.0.0'
 
   settings default: {
+    'plugin_enabled'    => '1',
     'sound_enabled'     => '1',
     'max_notifications' => '20',
     'preview_length'    => '100'

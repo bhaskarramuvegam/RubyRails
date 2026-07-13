@@ -2,6 +2,8 @@ module RedmineNotificationBell
   class Hooks < Redmine::Hook::ViewListener
 
     def view_layouts_base_html_head(context = {})
+      return '' unless NotificationBell.plugin_enabled?
+
       plugin_settings = begin
         Setting.plugin_redmine_notification_bell
       rescue
@@ -30,6 +32,7 @@ module RedmineNotificationBell
     end
 
     def view_layouts_base_body_bottom(context = {})
+      return '' unless NotificationBell.plugin_enabled?
       return '' unless User.current.logged?
 
       context[:controller].render_to_string(
