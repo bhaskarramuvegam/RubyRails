@@ -1,0 +1,20 @@
+//deploy plugin
+
+cd <redmine plugin path>
+unzip /<pluigin path>/redmine_notification_bell.zip -d plugins/
+ls -la plugins/redmine_notification_bell/ ---verify installation
+systemctl restart apache2
+cd <redmine plugin path>  ---clear temp files
+rm -rf tmp/cache/*
+systemctl restart apache2
+ 
+
+//migration script Command - 
+bundle exec rake redmine:plugins:migrate RAILS_ENV=production
+
+
+
+//REMOVE PLUGIN
+sudo su
+cd <redmine plugin path>
+rm -rf redmine_notification_bell/
