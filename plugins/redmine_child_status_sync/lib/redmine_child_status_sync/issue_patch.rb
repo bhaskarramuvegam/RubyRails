@@ -24,7 +24,14 @@ module RedmineChildStatusSync
         debug_logging = Setting.plugin_redmine_child_status_sync['enable_logging'] == '1'
 
         Rails.logger.info("===== CHILD STATUS SYNC DEBUG START =====") if debug_logging
-        Rails.logger.info("Issue ID: #{id}, Parent ID: #{parent_id}") if debug_logging
+        Rails.logger.info("Issue ID: #{id}, Parent ID: #{parent_id}, Tracker: #{tracker&.name}") if debug_logging
+
+        # Restricted trackers (e.g. Bug, CR_Bug) never propagate their status to parent issues.
+        # This keeps auto status sync limited to the Task -> User Story -> CR flow.
+        if restricted_tracker?
+          Rails.logger.info("SKIPPED: Tracker '#{tracker&.name}' is restricted from updating parent status") if debug_logging
+          return
+        end
 
         parent_issues = collect_parent_issues
         if parent_issues.empty?
@@ -68,6 +75,14 @@ module RedmineChildStatusSync
         end
 
         Rails.logger.info("===== CHILD STATUS SYNC DEBUG END =====") if debug_logging
+      end
+
+      def restricted_tracker?
+        restricted_names = Setting.plugin_redmine_child_status_sync['restricted_trackers'].to_s
+                                   .split(',').map { |name| name.strip.downcase }.reject(&:blank?)
+        return false if restricted_names.empty?
+
+        restricted_names.include?(tracker&.name.to_s.downcase)
       end
 
       def status_changed?

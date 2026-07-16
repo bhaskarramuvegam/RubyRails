@@ -14,7 +14,12 @@ class ChildStatusSyncTest < ActiveSupport::TestCase
 
     # Create test data
     @project = Project.find_by(identifier: 'test-project') || Project.create!(name: 'Test Project', identifier: 'test-project', is_public: true)
-    @tracker = Tracker.find_by(name: 'Bug') || Tracker.create!(name: 'Bug')
+    @tracker = Tracker.find_by(name: 'Task') || Tracker.create!(name: 'Task')
+    @bug_tracker = Tracker.find_by(name: 'Bug') || Tracker.create!(name: 'Bug')
+    @cr_bug_tracker = Tracker.find_by(name: 'CR_Bug') || Tracker.create!(name: 'CR_Bug')
+
+    # Ensure the restricted trackers setting matches plugin defaults for these tests
+    Setting.plugin_redmine_child_status_sync = Setting.plugin_redmine_child_status_sync.merge('restricted_trackers' => 'Bug,CR_Bug')
 
     # Create issue statuses
     @new_status = IssueStatus.find_by(name: 'New') || IssueStatus.create!(name: 'New', is_closed: false)
@@ -182,5 +187,94 @@ class ChildStatusSyncTest < ActiveSupport::TestCase
                  "First parent issue status should be updated"
     assert_equal @dev_in_progress_status.id, second_parent.reload.status_id,
                  "Second parent issue status should be updated"
+  end
+
+  test "parent status does not update when child tracker is Bug" do
+    child_issue = Issue.create!(
+      project: @project,
+      tracker: @bug_tracker,
+      subject: 'Bug Child',
+      status: @new_status,
+      parent_id: @parent_issue.id
+    )
+
+    child_issue.status = @dev_in_progress_status
+    child_issue.save!
+
+    @parent_issue.reload
+    assert_equal @new_status.id, @parent_issue.status_id,
+                 "Parent issue status should not change when a Bug child changes status"
+  end
+
+  test "parent status does not update when child tracker is CR_Bug" do
+    child_issue = Issue.create!(
+      project: @project,
+      tracker: @cr_bug_tracker,
+      subject: 'CR_Bug Child',
+      status: @new_status,
+      parent_id: @parent_issue.id
+    )
+
+    child_issue.status = @dev_in_progress_status
+    child_issue.save!
+
+    @parent_issue.reload
+    assert_equal @new_status.id, @parent_issue.status_id,
+                 "Parent issue status should not change when a CR_Bug child changes status"
+  end
+
+  test "parent status still updates for non-restricted trackers like Task" do
+    child_issue = Issue.create!(
+      project: @project,
+      tracker: @tracker,
+      subject: 'Task Child',
+      status: @new_status,
+      parent_id: @parent_issue.id
+    )
+
+    child_issue.status = @dev_in_progress_status
+    child_issue.save!
+
+    @parent_issue.reload
+    assert_equal @dev_in_progress_status.id, @parent_issue.status_id,
+                 "Parent issue status should still update for non-restricted trackers"
+  end
+
+  test "restricted trackers setting is case-insensitive and trims whitespace" do
+    Setting.plugin_redmine_child_status_sync = Setting.plugin_redmine_child_status_sync.merge('restricted_trackers' => ' bug , cr_bug ')
+
+    child_issue = Issue.create!(
+      project: @project,
+      tracker: @bug_tracker,
+      subject: 'Bug Child',
+      status: @new_status,
+      parent_id: @parent_issue.id
+    )
+
+    child_issue.status = @dev_in_progress_status
+    child_issue.save!
+
+    @parent_issue.reload
+    assert_equal @new_status.id, @parent_issue.status_id,
+                 "Restricted tracker matching should be case-insensitive and whitespace-tolerant"
+  end
+
+  test "blank restricted trackers setting allows all trackers to sync" do
+    Setting.plugin_redmine_child_status_sync = Setting.plugin_redmine_child_status_sync.merge('restricted_trackers' => '')
+
+    child_issue = Issue.create!(
+      project: @project,
+      tracker: @bug_tracker,
+      subject: 'Bug Child',
+      status: @new_status,
+      parent_id: @parent_issue.id
+    )
+
+    child_issue.status = @dev_in_progress_status
+    child_issue.save!
+
+    @parent_issue.reload
+    assert_equal @dev_in_progress_status.id, @parent_issue.status_id,
+                 "With no restricted trackers configured, all trackers should sync as before"
   end
 end

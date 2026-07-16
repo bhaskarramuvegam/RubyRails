@@ -17,9 +17,22 @@
     <em style="display: block; margin-top: 5px; color: #666;">When enabled, detailed debug messages will be logged to the Redmine log file for troubleshooting</em>
   </p>
 
+  <p>
+    <label for="settings_restricted_trackers">Restricted Trackers (no parent status update)</label><br>
+    <%= text_field_tag 'settings[restricted_trackers]', @settings['restricted_trackers'], size: 60 %>
+    <em style="display: block; margin-top: 5px; color: #666;">
+      Comma-separated tracker names, e.g. <code>Bug,CR_Bug</code>. When a child issue's tracker matches one of these
+      names, its status changes will <strong>not</strong> be propagated to any parent issue. Use this to keep Bug /
+      CR_Bug from auto-updating their Task, User Story, or CR parents, while the normal
+      Task &rarr; User Story &rarr; CR flow keeps syncing normally.
+    </em>
+  </p>
+
   <p style="margin-top: 20px; padding: 10px; background-color: #f5f5f5; border-left: 3px solid #2196F3;">
     <strong>How it works:</strong><br>
-    When a child issue's status is updated to any status, this plugin automatically updates the parent issue's status to match. 
-    This ensures parent tasks reflect the current progress of their subtasks.
+    When a child issue's status is updated to any status, this plugin automatically updates the parent issue's status to match,
+    unless the child issue's tracker is listed under "Restricted Trackers" above.
+    This ensures parent tasks reflect the current progress of their subtasks, without Bug/CR_Bug issues driving the status
+    of their parents.
   </p>
 </div>
