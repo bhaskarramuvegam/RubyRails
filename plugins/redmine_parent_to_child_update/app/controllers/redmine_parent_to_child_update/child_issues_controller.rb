@@ -104,44 +104,6 @@ module RedmineParentToChildUpdate
           return render json: { error: primary_child.errors.full_messages.join(', ') }, status: :unprocessable_entity
         end
 
-        # Optionally create Development and Testing tasks under the primary child
-        if Setting.plugin_redmine_parent_to_child_update['create_dev_test_tasks'] == '1'
-          dev_cat  = IssueCategory.find_by(name: 'Development', project_id: @issue.project.id) || IssueCategory.find_by(name: 'Development')
-          test_cat = IssueCategory.find_by(name: 'Testing',     project_id: @issue.project.id) || IssueCategory.find_by(name: 'Testing')
-
-          # Use the configured dev/test tracker name (default "Task"), fall back to primary child's tracker
-          dev_test_tracker_name = Setting.plugin_redmine_parent_to_child_update['dev_test_task_tracker'].to_s.strip
-          dev_test_tracker_name = 'Task' if dev_test_tracker_name.blank?
-          dev_test_tracker = @issue.project.trackers.find { |t| t.name.casecmp(dev_test_tracker_name) == 0 } || tracker
-
-          ['Development', 'Testing'].each do |label|
-            begin
-              cat = (label == 'Development') ? dev_cat : test_cat
-              child = Issue.new(
-                project: @issue.project,
-                tracker: dev_test_tracker,
-                subject: "#{subject} - #{label}",
-                description: description,
-                status: (IssueStatus.respond_to?(:default) ? IssueStatus.default : (begin; IssueStatus.find_by(is_default: true); rescue ActiveRecord::StatementInvalid; nil; end) || IssueStatus.first),
-                priority: @issue.priority,
-                author_id: @issue.author_id,
-                parent_id: primary_child.id,
-                category_id: (cat && cat.id)
-              )
-              child.replicate_fields_from_parent(@issue)
-              # override category if found
-              child.category_id = cat.id if cat
-              if child.save(validate: false)
-                created_children << child
-              else
-                Rails.logger.error("Error creating auto #{label} child: #{child.errors.full_messages.join(', ')}")
-              end
-            rescue => e
-              Rails.logger.error("Exception creating auto #{label} child: #{e.message}")
-            end
-          end
-        end
-
         additional_ids = Array(params[:additional_child_tracker_ids]).map(&:to_i).select { |id| id > 0 }
         additional_ids.each do |additional_id|
           next if additional_id == tracker.id
@@ -166,9 +128,27 @@ module RedmineParentToChildUpdate
           end
         end
 
-        render json: {
-          children: created_children.map { |c| { id: c.id, subject: c.subject, url: issue_path(c) } }
-        }, status: :created
+        # ── Chain popup logic ──────────────────────────────────────────────────
+        # Check if the newly created child's tracker has child types configured.
+        # If yes → redirect to the child's page with popup auto-open (chain continues).
+        # If no  → stay on current page and re-open popup (loop for more siblings).
+        trackers_map = Setting.plugin_redmine_parent_to_child_update['popup_child_trackers_by_parent'] || {}
+        child_tracker_filter = trackers_map[primary_child.tracker_id.to_s].to_s.strip
+
+        if child_tracker_filter.present?
+          # Child has grandchild types configured → set session and redirect to child
+          session[:redmine_parent_to_child_show_prompt_for] = primary_child.id
+          render json: {
+            children:    created_children.map { |c| { id: c.id, subject: c.subject, url: issue_path(c) } },
+            redirect_to: issue_path(primary_child)
+          }, status: :created
+        else
+          # No further chain → loop: stay on same page, re-open popup for next sibling
+          render json: {
+            children: created_children.map { |c| { id: c.id, subject: c.subject, url: issue_path(c) } },
+            loop:     true
+          }, status: :created
+        end
       rescue => e
         Rails.logger.error("Error creating child issue: #{e.message}")
         render json: { error: e.message }, status: :internal_server_error
