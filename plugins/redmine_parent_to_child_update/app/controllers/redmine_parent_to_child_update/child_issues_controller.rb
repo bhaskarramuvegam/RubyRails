@@ -106,8 +106,8 @@ module RedmineParentToChildUpdate
 
         # Optionally create Development and Testing tasks under the primary child
         if Setting.plugin_redmine_parent_to_child_update['create_dev_test_tasks'] == '1'
-          dev_cat = Category.find_by(name: 'Development', project_id: @issue.project.id) || Category.find_by(name: 'Development')
-          test_cat = Category.find_by(name: 'Testing', project_id: @issue.project.id) || Category.find_by(name: 'Testing')
+          dev_cat = IssueCategory.find_by(name: 'Development', project_id: @issue.project.id) || IssueCategory.find_by(name: 'Development')
+          test_cat = IssueCategory.find_by(name: 'Testing', project_id: @issue.project.id) || IssueCategory.find_by(name: 'Testing')
 
           ['Development', 'Testing'].each do |label|
             begin
