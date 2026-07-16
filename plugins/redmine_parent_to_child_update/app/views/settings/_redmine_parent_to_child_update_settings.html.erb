@@ -169,6 +169,23 @@
 </div>
 
 <%# ═══════════════════════════════════════════════════════════════════════════
+    SECTION 3b – Child tracker options shown in the popup dropdown
+    ═══════════════════════════════════════════════════════════════════════════ %>
+<div class="pcu-box">
+  <div class="pcu-box-head">Child tracker options shown in the popup dropdown</div>
+  <div class="pcu-box-body">
+    <div class="pcu-setting">
+      <label>Tracker names (comma-separated)</label>
+      <%= text_field_tag 'settings[popup_child_trackers]',
+            @settings['popup_child_trackers'].presence || 'User Story,Task',
+            style: 'width:100%;max-width:420px;padding:6px;font-size:13px;',
+            placeholder: 'User Story,Task' %>
+      <p class="pcu-hint">Only these trackers appear in the child-creation popup dropdown (case-insensitive). Leave blank to show all available child trackers.</p>
+    </div>
+  </div>
+</div>
+
+<%# ═══════════════════════════════════════════════════════════════════════════
     SECTION 4 – Popup Fields Per Child Tracker
     ═══════════════════════════════════════════════════════════════════════════ %>
 <div class="pcu-box">

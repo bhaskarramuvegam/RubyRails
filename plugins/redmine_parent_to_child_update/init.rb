@@ -28,6 +28,7 @@ Redmine::Plugin.register :redmine_parent_to_child_update do
     'additional_child_trackers' => 'Development Task,Testing Task',
     'create_dev_test_tasks' => '0',
     'dev_test_task_tracker' => 'Task',
+    'popup_child_trackers' => 'User Story,Task',
     # Hash: tracker_id (string) => array of custom_field_id strings to show in popup
     # e.g. { "3" => ["10", "11"], "5" => ["12"] }
     'tracker_popup_fields' => {}

@@ -82,7 +82,10 @@ module RedmineParentToChildUpdate
       # Session may serialise the integer as a String — compare both sides as integers
       return unless scheduled_id.to_i == issue.id.to_i
 
-      trackers     = issue.available_child_trackers
+      popup_filter = Setting.plugin_redmine_parent_to_child_update['popup_child_trackers'].to_s
+                       .split(',').map(&:strip).reject(&:empty?)
+      trackers = issue.available_child_trackers
+      trackers = trackers.select { |t| popup_filter.any? { |n| n.casecmp(t.name) == 0 } } if popup_filter.any?
       first_tracker_id = trackers.first&.id.to_i
 
       output = +""
