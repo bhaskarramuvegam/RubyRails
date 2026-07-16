@@ -106,15 +106,20 @@ module RedmineParentToChildUpdate
 
         # Optionally create Development and Testing tasks under the primary child
         if Setting.plugin_redmine_parent_to_child_update['create_dev_test_tasks'] == '1'
-          dev_cat = IssueCategory.find_by(name: 'Development', project_id: @issue.project.id) || IssueCategory.find_by(name: 'Development')
-          test_cat = IssueCategory.find_by(name: 'Testing', project_id: @issue.project.id) || IssueCategory.find_by(name: 'Testing')
+          dev_cat  = IssueCategory.find_by(name: 'Development', project_id: @issue.project.id) || IssueCategory.find_by(name: 'Development')
+          test_cat = IssueCategory.find_by(name: 'Testing',     project_id: @issue.project.id) || IssueCategory.find_by(name: 'Testing')
+
+          # Use the configured dev/test tracker name (default "Task"), fall back to primary child's tracker
+          dev_test_tracker_name = Setting.plugin_redmine_parent_to_child_update['dev_test_task_tracker'].to_s.strip
+          dev_test_tracker_name = 'Task' if dev_test_tracker_name.blank?
+          dev_test_tracker = @issue.project.trackers.find { |t| t.name.casecmp(dev_test_tracker_name) == 0 } || tracker
 
           ['Development', 'Testing'].each do |label|
             begin
               cat = (label == 'Development') ? dev_cat : test_cat
               child = Issue.new(
                 project: @issue.project,
-                tracker: tracker,
+                tracker: dev_test_tracker,
                 subject: "#{subject} - #{label}",
                 description: description,
                 status: (IssueStatus.respond_to?(:default) ? IssueStatus.default : (begin; IssueStatus.find_by(is_default: true); rescue ActiveRecord::StatementInvalid; nil; end) || IssueStatus.first),
