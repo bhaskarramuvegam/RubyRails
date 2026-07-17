@@ -217,16 +217,31 @@
 <%# ═══════════════════════════════════════════════════════════════════════════
     SECTION 4 – Popup Fields Per Child Tracker
     ═══════════════════════════════════════════════════════════════════════════ %>
+<%
+  # Standard Redmine issue fields that can be shown in the child-creation popup.
+  # These are read from Redmine's own field list — add new keys here as Redmine
+  # gains new standard fields and they will automatically appear in the selector.
+  pcu_standard_fields = [
+    { key: 'estimated_hours',  name: 'Estimated Time',  required: false },
+    { key: 'start_date',       name: 'Start Date',      required: false },
+    { key: 'due_date',         name: 'Due Date',        required: false },
+    { key: 'done_ratio',       name: '% Done',          required: false },
+    { key: 'description',      name: 'Description',     required: false },
+    { key: 'assigned_to_id',   name: 'Assigned To',     required: false },
+    { key: 'priority_id',      name: 'Priority',        required: false },
+    { key: 'category_id',      name: 'Category',        required: false },
+    { key: 'fixed_version_id', name: 'Target Version',  required: false },
+  ]
+%>
 <div class="pcu-box">
   <div class="pcu-box-head">Popup Fields Per Child Tracker</div>
   <div class="pcu-box-body">
 
     <p style="margin:0 0 14px;color:#555;font-size:13px;">
-      For each child tracker, choose which custom fields appear in the
-      <em>Create Child Issue</em> popup. Use <strong>+ Add</strong> to pick a field and
-      <strong>×</strong> to remove it. Only the fields listed here will be shown in the popup
-      (plus any <span style="background:#f44336;color:#fff;border-radius:3px;padding:0 4px;font-size:11px;">required</span>
-      fields that the parent cannot supply, which are always included automatically).
+      For each child tracker, choose which fields appear in the <em>Create Child Issue</em> popup.
+      Both <strong>standard Redmine fields</strong> (Estimated Time, Start Date, etc.) and
+      <strong>custom fields</strong> for that tracker are available.
+      Use <strong>+ Add</strong> to add a field and <strong>×</strong> to remove it.
     </p>
 
     <%
@@ -239,11 +254,21 @@
     <% else %>
       <% all_trackers.each do |tracker| %>
         <%
-          all_cfs      = tracker.custom_fields.order(:name)
-          sel_ids      = Array(popup_cfg[tracker.id.to_s]).map(&:to_s).uniq
-          sel_cfs      = all_cfs.select { |cf| sel_ids.include?(cf.id.to_s) }
-          avail_cfs    = all_cfs.reject  { |cf| sel_ids.include?(cf.id.to_s) }
-          tid          = tracker.id
+          all_cfs   = tracker.custom_fields.order(:name)
+          sel_ids   = Array(popup_cfg[tracker.id.to_s]).map(&:to_s).uniq
+          tid       = tracker.id
+
+          # Split selected IDs into standard (prefix "std_") and custom (numeric strings)
+          sel_std_keys = sel_ids.select { |v| v.start_with?('std_') }.map { |v| v.sub('std_', '') }
+          sel_cf_ids   = sel_ids.reject { |v| v.start_with?('std_') }
+
+          sel_std   = pcu_standard_fields.select { |f| sel_std_keys.include?(f[:key]) }
+          avail_std = pcu_standard_fields.reject  { |f| sel_std_keys.include?(f[:key]) }
+
+          sel_cfs   = all_cfs.select { |cf| sel_cf_ids.include?(cf.id.to_s) }
+          avail_cfs = all_cfs.reject  { |cf| sel_cf_ids.include?(cf.id.to_s) }
+
+          total_sel = sel_std.size + sel_cfs.size
         %>
 
         <div class="pcu-tracker" id="pcu-tracker-<%= tid %>">
@@ -252,87 +277,103 @@
           <div class="pcu-tracker-hd" onclick="pcuToggle(<%= tid %>)">
             <span>
               <%= tracker.name %>
-              <span class="pcu-count-badge" id="pcu-count-<%= tid %>">
-                <%= sel_cfs.size %>
-              </span>
+              <span class="pcu-count-badge" id="pcu-count-<%= tid %>"><%= total_sel %></span>
               <span style="color:#888;font-weight:normal;font-size:11px;">
-                field<%= sel_cfs.size == 1 ? '' : 's' %> in popup
+                field<%= total_sel == 1 ? '' : 's' %> in popup
               </span>
             </span>
-            <span class="pcu-arrow" id="pcu-arrow-<%= tid %>">
-              <%= sel_cfs.any? ? '▲' : '▼' %>
-            </span>
+            <span class="pcu-arrow" id="pcu-arrow-<%= tid %>"><%= total_sel > 0 ? '▲' : '▼' %></span>
           </div>
 
           <%# ── accordion body ───────────────────────────────────────────── %>
-          <div class="pcu-tracker-bd <%= 'open' if sel_cfs.any? %>"
-               id="pcu-body-<%= tid %>">
+          <div class="pcu-tracker-bd <%= 'open' if total_sel > 0 %>" id="pcu-body-<%= tid %>">
 
-            <%# Hidden checkboxes – actual form values ──────────────────── %>
+            <%# Hidden checkboxes for standard fields ──────────────────── %>
+            <% pcu_standard_fields.each do |sf| %>
+              <%= check_box_tag "settings[tracker_popup_fields][#{tid}][]",
+                    "std_#{sf[:key]}",
+                    sel_std_keys.include?(sf[:key]),
+                    id:    "pcu-cb-#{tid}-std_#{sf[:key]}",
+                    class: 'pcu-hidden-cb',
+                    style: 'display:none',
+                    data:  { tid: tid, fid: "std_#{sf[:key]}", name: sf[:name], required: '0', ftype: 'std' } %>
+            <% end %>
+
+            <%# Hidden checkboxes for custom fields ────────────────────── %>
             <% all_cfs.each do |cf| %>
               <%= check_box_tag "settings[tracker_popup_fields][#{tid}][]",
                     cf.id.to_s,
-                    sel_ids.include?(cf.id.to_s),
-                    id:    "pcu-cb-#{tid}-#{cf.id}",
+                    sel_cf_ids.include?(cf.id.to_s),
+                    id:    "pcu-cb-#{tid}-cf_#{cf.id}",
                     class: 'pcu-hidden-cb',
                     style: 'display:none',
-                    data:  {
-                      tid:      tid,
-                      cfid:     cf.id,
-                      name:     cf.name,
-                      required: cf.is_required ? '1' : '0'
-                    } %>
+                    data:  { tid: tid, fid: "cf_#{cf.id}", name: cf.name, required: cf.is_required ? '1' : '0', ftype: 'cf' } %>
             <% end %>
 
             <%# Selected fields chip list ───────────────────────────────── %>
-            <div style="margin-bottom:6px;font-size:12px;color:#555;font-weight:bold;">
-              Fields shown in popup:
-            </div>
+            <div style="margin-bottom:6px;font-size:12px;color:#555;font-weight:bold;">Fields shown in popup:</div>
             <div class="pcu-chips" id="pcu-chips-<%= tid %>">
-              <% if sel_cfs.empty? %>
+              <% if total_sel == 0 %>
                 <span class="pcu-chips-empty" id="pcu-empty-<%= tid %>">
                   No fields added yet — use the dropdown below to add fields.
                 </span>
-              <% else %>
-                <% sel_cfs.each do |cf| %>
-                  <span class="pcu-chip" id="pcu-chip-<%= tid %>-<%= cf.id %>">
-                    <%= cf.name %>
-                    <% if cf.is_required %>
-                      <span class="pcu-chip-req">required</span>
-                    <% else %>
-                      <span class="pcu-chip-opt">optional</span>
-                    <% end %>
-                    <button type="button" class="pcu-chip-remove"
-                            title="Remove"
-                            onclick="pcuRemove(<%= tid %>, <%= cf.id %>)">×</button>
-                  </span>
-                <% end %>
+              <% end %>
+              <% sel_std.each do |sf| %>
+                <span class="pcu-chip" id="pcu-chip-<%= tid %>-std_<%= sf[:key] %>">
+                  <%= sf[:name] %>
+                  <span style="font-size:10px;background:#1976D2;color:#fff;border-radius:3px;padding:1px 4px;margin-left:4px;">standard</span>
+                  <button type="button" class="pcu-chip-remove" title="Remove"
+                          onclick="pcuRemove(<%= tid.inspect %>, 'std_<%= sf[:key] %>')">×</button>
+                </span>
+              <% end %>
+              <% sel_cfs.each do |cf| %>
+                <span class="pcu-chip" id="pcu-chip-<%= tid %>-cf_<%= cf.id %>">
+                  <%= cf.name %>
+                  <% if cf.is_required %>
+                    <span class="pcu-chip-req">required</span>
+                  <% else %>
+                    <span class="pcu-chip-opt">optional</span>
+                  <% end %>
+                  <button type="button" class="pcu-chip-remove" title="Remove"
+                          onclick="pcuRemove(<%= tid.inspect %>, 'cf_<%= cf.id %>')">×</button>
+                </span>
               <% end %>
             </div>
 
             <%# Add-field row ───────────────────────────────────────────── %>
-            <% if all_cfs.empty? %>
-              <p class="pcu-hint">No custom fields are associated with this tracker.</p>
-            <% else %>
-              <div class="pcu-add-row">
-                <select id="pcu-sel-<%= tid %>">
-                  <option value="">— select a field to add —</option>
-                  <% avail_cfs.each do |cf| %>
-                    <option value="<%= cf.id %>"
-                            data-name="<%= cf.name %>"
-                            data-required="<%= cf.is_required ? '1' : '0' %>">
-                      <%= cf.name %> (<%= cf.is_required ? 'required' : 'optional' %>)
-                    </option>
-                  <% end %>
-                </select>
-                <button type="button" class="pcu-add-btn"
-                        onclick="pcuAdd(<%= tid %>)">+ Add</button>
-              </div>
-              <p class="pcu-hint" style="margin-top:6px;">
-                Fields marked <em>required</em> in Redmine are always shown in the popup
-                when the parent cannot supply a value, even if not added here.
-              </p>
-            <% end %>
+            <div class="pcu-add-row">
+              <select id="pcu-sel-<%= tid %>">
+                <option value="">— select a field to add —</option>
+                <% if avail_std.any? %>
+                  <optgroup label="Standard Redmine Fields">
+                    <% avail_std.each do |sf| %>
+                      <option value="std_<%= sf[:key] %>"
+                              data-name="<%= sf[:name] %>"
+                              data-required="0"
+                              data-fid="std_<%= sf[:key] %>">
+                        <%= sf[:name] %>
+                      </option>
+                    <% end %>
+                  </optgroup>
+                <% end %>
+                <% if avail_cfs.any? %>
+                  <optgroup label="Custom Fields">
+                    <% avail_cfs.each do |cf| %>
+                      <option value="cf_<%= cf.id %>"
+                              data-name="<%= cf.name %>"
+                              data-required="<%= cf.is_required ? '1' : '0' %>"
+                              data-fid="cf_<%= cf.id %>">
+                        <%= cf.name %> (<%= cf.is_required ? 'required' : 'optional' %>)
+                      </option>
+                    <% end %>
+                  </optgroup>
+                <% end %>
+              </select>
+              <button type="button" class="pcu-add-btn" onclick="pcuAdd(<%= tid %>)">+ Add</button>
+            </div>
+            <p class="pcu-hint" style="margin-top:6px;">
+              Any new standard or custom fields added to Redmine will automatically appear here.
+            </p>
 
           </div><%# /pcu-tracker-bd %>
         </div><%# /pcu-tracker %>
@@ -357,77 +398,96 @@ function pcuToggle(tid) {
 }
 
 /* ── Add field ──────────────────────────────────────────────────────────── */
+/* fid is either "std_<key>" for standard fields or "cf_<id>" for custom fields */
 function pcuAdd(tid) {
-  var sel    = document.getElementById('pcu-sel-' + tid);
-  var cfId   = sel.value;
-  if (!cfId) { sel.focus(); return; }
+  var sel   = document.getElementById('pcu-sel-' + tid);
+  var fid   = sel.value;  /* e.g. "std_estimated_hours" or "cf_42" */
+  if (!fid) { sel.focus(); return; }
 
-  var opt      = sel.options[sel.selectedIndex];
-  var cfName   = opt.dataset.name   || opt.text;
-  var isReq    = opt.dataset.required === '1';
-  var badgeCls = isReq ? 'pcu-chip-req' : 'pcu-chip-opt';
-  var badgeTxt = isReq ? 'required'     : 'optional';
+  var opt     = sel.options[sel.selectedIndex];
+  var fName   = opt.dataset.name || opt.text;
+  var isReq   = opt.dataset.required === '1';
+  var isStd   = fid.indexOf('std_') === 0;
 
-  /* tick the hidden checkbox */
-  var cb = document.getElementById('pcu-cb-' + tid + '-' + cfId);
+  /* badge */
+  var badgeHtml = isStd
+    ? '<span style="font-size:10px;background:#1976D2;color:#fff;border-radius:3px;padding:1px 4px;margin-left:4px;">standard</span>'
+    : ('<span class="' + (isReq ? 'pcu-chip-req' : 'pcu-chip-opt') + '">' + (isReq ? 'required' : 'optional') + '</span>');
+
+  /* tick the hidden checkbox (id uses the fid directly) */
+  var cb = document.getElementById('pcu-cb-' + tid + '-' + fid);
   if (cb) cb.checked = true;
 
-  /* remove the option from the dropdown */
+  /* remove option from dropdown */
   sel.remove(sel.selectedIndex);
   sel.value = '';
 
-  /* hide the "no fields" placeholder */
+  /* hide empty placeholder */
   var empty = document.getElementById('pcu-empty-' + tid);
   if (empty) empty.style.display = 'none';
 
-  /* build and append chip */
+  /* build chip — pass fid as quoted string to pcuRemove */
   var chip = document.createElement('span');
   chip.className = 'pcu-chip';
-  chip.id        = 'pcu-chip-' + tid + '-' + cfId;
+  chip.id        = 'pcu-chip-' + tid + '-' + fid;
   chip.innerHTML =
-    pcuEsc(cfName) +
-    ' <span class="' + badgeCls + '">' + badgeTxt + '</span>' +
+    pcuEsc(fName) + ' ' + badgeHtml +
     ' <button type="button" class="pcu-chip-remove" title="Remove"' +
-    '         onclick="pcuRemove(' + tid + ',' + cfId + ')">&#215;</button>';
+    '         onclick="pcuRemove(' + JSON.stringify(tid) + ',' + JSON.stringify(fid) + ')">&#215;</button>';
   document.getElementById('pcu-chips-' + tid).appendChild(chip);
 
   pcuUpdateCount(tid);
 }
 
 /* ── Remove field ───────────────────────────────────────────────────────── */
-function pcuRemove(tid, cfId) {
+function pcuRemove(tid, fid) {
   /* untick the hidden checkbox */
-  var cb = document.getElementById('pcu-cb-' + tid + '-' + cfId);
+  var cb = document.getElementById('pcu-cb-' + tid + '-' + fid);
   if (!cb) return;
   cb.checked = false;
 
-  /* rebuild option text from data attrs and add it back to dropdown */
-  var cfName = cb.dataset.name;
+  var fName  = cb.dataset.name;
   var isReq  = cb.dataset.required === '1';
+  var isStd  = fid.indexOf('std_') === 0;
   var sel    = document.getElementById('pcu-sel-' + tid);
+
   if (sel) {
     var newOpt = document.createElement('option');
-    newOpt.value              = cfId;
-    newOpt.dataset.name       = cfName;
-    newOpt.dataset.required   = cb.dataset.required;
-    newOpt.textContent        = cfName + ' (' + (isReq ? 'required' : 'optional') + ')';
-    /* insert alphabetically (skip the blank first option) */
+    newOpt.value            = fid;
+    newOpt.dataset.name     = fName;
+    newOpt.dataset.required = cb.dataset.required;
+    newOpt.dataset.fid      = fid;
+    newOpt.textContent      = fName + (isStd ? '' : ' (' + (isReq ? 'required' : 'optional') + ')');
+
+    /* find or create the correct optgroup */
+    var groupLabel = isStd ? 'Standard Redmine Fields' : 'Custom Fields';
+    var grp = null;
+    for (var g = 0; g < sel.children.length; g++) {
+      if (sel.children[g].label === groupLabel) { grp = sel.children[g]; break; }
+    }
+    if (!grp) {
+      grp = document.createElement('optgroup');
+      grp.label = groupLabel;
+      /* standard fields group goes before custom */
+      if (isStd) sel.insertBefore(grp, sel.querySelector('optgroup') || null);
+      else sel.appendChild(grp);
+    }
+
+    /* insert alphabetically within the group */
     var inserted = false;
-    for (var i = 1; i < sel.options.length; i++) {
-      if (sel.options[i].text.toLowerCase() > newOpt.text.toLowerCase()) {
-        sel.insertBefore(newOpt, sel.options[i]);
-        inserted = true;
-        break;
+    for (var i = 0; i < grp.children.length; i++) {
+      if (grp.children[i].text.toLowerCase() > newOpt.text.toLowerCase()) {
+        grp.insertBefore(newOpt, grp.children[i]); inserted = true; break;
       }
     }
-    if (!inserted) sel.appendChild(newOpt);
+    if (!inserted) grp.appendChild(newOpt);
   }
 
-  /* remove the chip */
-  var chip = document.getElementById('pcu-chip-' + tid + '-' + cfId);
+  /* remove chip */
+  var chip = document.getElementById('pcu-chip-' + tid + '-' + fid);
   if (chip) chip.remove();
 
-  /* show "no fields" placeholder if chips area is now empty */
+  /* show empty placeholder if no chips remain */
   var chips = document.querySelectorAll('#pcu-chips-' + tid + ' .pcu-chip');
   if (chips.length === 0) {
     var empty = document.getElementById('pcu-empty-' + tid);
@@ -435,8 +495,8 @@ function pcuRemove(tid, cfId) {
       empty.style.display = '';
     } else {
       var span = document.createElement('span');
-      span.className = 'pcu-chips-empty';
-      span.id        = 'pcu-empty-' + tid;
+      span.className   = 'pcu-chips-empty';
+      span.id          = 'pcu-empty-' + tid;
       span.textContent = 'No fields added yet — use the dropdown below to add fields.';
       document.getElementById('pcu-chips-' + tid).appendChild(span);
     }

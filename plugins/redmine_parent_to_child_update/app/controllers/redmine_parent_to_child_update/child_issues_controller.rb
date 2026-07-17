@@ -7,12 +7,21 @@ module RedmineParentToChildUpdate
 
     accept_api_auth :create_child
 
-    # Return fields to display in the child-creation popup for the given tracker.
-    #
-    # Two sources are merged (deduped by custom field id):
-    #   1. Admin-configured popup fields  — always shown; pre-filled with parent value when available.
-    #   2. Required fields missing from parent — shown when the child tracker marks them required
-    #      but the parent has no value to inherit.
+    # All supported standard Redmine issue fields for the popup.
+    # Add new entries here as Redmine gains new fields — they auto-appear in admin config.
+    STANDARD_POPUP_FIELDS = {
+      'estimated_hours'  => { name: 'Estimated Time',  format: 'float'    },
+      'start_date'       => { name: 'Start Date',       format: 'date'     },
+      'due_date'         => { name: 'Due Date',         format: 'date'     },
+      'done_ratio'       => { name: '% Done',           format: 'int'      },
+      'description'      => { name: 'Description',      format: 'text'     },
+      'assigned_to_id'   => { name: 'Assigned To',      format: 'select'   },
+      'priority_id'      => { name: 'Priority',         format: 'select'   },
+      'category_id'      => { name: 'Category',         format: 'select'   },
+      'fixed_version_id' => { name: 'Target Version',   format: 'select'   },
+    }.freeze
+
+    # Return fields (standard + custom) to display in the child-creation popup.
     def get_required_fields
       return render_404 unless @issue
       return render_403 unless User.current.allowed_to?(:add_issues, @issue.project)
@@ -23,28 +32,79 @@ module RedmineParentToChildUpdate
       tracker = Tracker.find_by(id: tracker_id)
       return render json: { fields: [] } unless tracker
 
-      # Only show fields the admin explicitly configured for this tracker.
-      # Required fields are intentionally excluded — they are handled by
-      # replicate_fields_from_parent / append_required_custom_fields at save time.
-      plugin_settings   = Setting.plugin_redmine_parent_to_child_update || {}
-      popup_fields_cfg  = plugin_settings['tracker_popup_fields'] || {}
-      configured_cf_ids = Array(popup_fields_cfg[tracker_id.to_s]).map(&:to_i).uniq
+      plugin_settings  = Setting.plugin_redmine_parent_to_child_update || {}
+      popup_fields_cfg = plugin_settings['tracker_popup_fields'] || {}
+      configured_ids   = Array(popup_fields_cfg[tracker_id.to_s]).map(&:to_s).uniq
 
-      configured_cfs = tracker.custom_fields.select { |cf| configured_cf_ids.include?(cf.id) }
+      # Split into standard (prefix "std_") and custom (numeric strings / "cf_<n>")
+      std_keys = configured_ids.select { |v| v.start_with?('std_') }.map { |v| v.sub('std_', '') }
+      cf_ids   = configured_ids.map { |v| v.sub(/\Acf_/, '').to_i }.select { |v| v > 0 }.uniq
 
-      render json: {
-        fields: configured_cfs.map do |cf|
-          {
-            id:              cf.id,
-            name:            cf.name,
-            field_format:    cf.field_format,
-            possible_values: cf.field_format == 'list' ? cf.possible_values : [],
-            default_value:   cf.default_value.to_s,
-            value:           @issue.custom_field_value(cf.id).to_s,
-            is_required:     cf.is_required
-          }
+      # ── Standard fields ────────────────────────────────────────────────────
+      std_fields = std_keys.filter_map do |key|
+        defn = STANDARD_POPUP_FIELDS[key]
+        next unless defn
+
+        opts = {
+          id:              "std_#{key}",
+          std_key:         key,
+          name:            defn[:name],
+          field_format:    defn[:format],
+          possible_values: [],
+          default_value:   '',
+          value:           '',
+          is_required:     false,
+          is_standard:     true
+        }
+
+        case key
+        when 'estimated_hours'
+          opts[:value] = @issue.estimated_hours.to_s
+        when 'start_date'
+          opts[:value] = @issue.start_date&.to_s || ''
+        when 'due_date'
+          opts[:value] = @issue.due_date&.to_s || ''
+        when 'done_ratio'
+          opts[:value] = @issue.done_ratio.to_s
+        when 'description'
+          opts[:value] = @issue.description.to_s
+        when 'assigned_to_id'
+          opts[:possible_values] = @issue.project.members.includes(:user)
+            .map { |m| { value: m.user_id.to_s, label: m.user.name } }
+          opts[:value] = @issue.assigned_to_id.to_s
+        when 'priority_id'
+          opts[:possible_values] = IssuePriority.active
+            .map { |p| { value: p.id.to_s, label: p.name } }
+          opts[:value] = @issue.priority_id.to_s
+        when 'category_id'
+          opts[:possible_values] = @issue.project.issue_categories
+            .map { |c| { value: c.id.to_s, label: c.name } }
+          opts[:value] = @issue.category_id.to_s
+        when 'fixed_version_id'
+          opts[:possible_values] = @issue.project.shared_versions.open
+            .map { |v| { value: v.id.to_s, label: v.name } }
+          opts[:value] = @issue.fixed_version_id.to_s
         end
-      }
+
+        opts
+      end
+
+      # ── Custom fields ──────────────────────────────────────────────────────
+      configured_cfs = tracker.custom_fields.select { |cf| cf_ids.include?(cf.id) }
+      cf_fields = configured_cfs.map do |cf|
+        {
+          id:              cf.id,
+          name:            cf.name,
+          field_format:    cf.field_format,
+          possible_values: cf.field_format == 'list' ? cf.possible_values : [],
+          default_value:   cf.default_value.to_s,
+          value:           @issue.custom_field_value(cf.id).to_s,
+          is_required:     cf.is_required,
+          is_standard:     false
+        }
+      end
+
+      render json: { fields: std_fields + cf_fields }
     end
 
     # Get available trackers for child creation
@@ -89,7 +149,26 @@ module RedmineParentToChildUpdate
           parent_id: @issue.id
         )
         primary_child.replicate_fields_from_parent(@issue)
-        # Apply user-supplied custom field values (from popup form for required fields)
+
+        # Apply standard field values submitted from the popup
+        if params[:std_fields].is_a?(ActionController::Parameters) || params[:std_fields].is_a?(Hash)
+          params[:std_fields].each do |key, value|
+            next if value.blank?
+            case key.to_s
+            when 'estimated_hours'  then primary_child.estimated_hours  = value.to_f
+            when 'start_date'       then primary_child.start_date       = value
+            when 'due_date'         then primary_child.due_date         = value
+            when 'done_ratio'       then primary_child.done_ratio       = value.to_i.clamp(0, 100)
+            when 'description'      then primary_child.description      = value
+            when 'assigned_to_id'   then primary_child.assigned_to_id   = value.to_i
+            when 'priority_id'      then primary_child.priority_id      = value.to_i
+            when 'category_id'      then primary_child.category_id      = value.to_i
+            when 'fixed_version_id' then primary_child.fixed_version_id = value.to_i
+            end
+          end
+        end
+
+        # Apply custom field values submitted from the popup
         if params[:custom_field_values].is_a?(ActionController::Parameters) || params[:custom_field_values].is_a?(Hash)
           params[:custom_field_values].each do |cf_id, value|
             next if value.blank?
