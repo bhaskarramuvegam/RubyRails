@@ -40,4 +40,24 @@ class NotificationBellsController < ApplicationController
     NotificationBell.for_user(User.current).unread.update_all(read: true)
     render json: { success: true, unread_count: 0 }
   end
+
+  # Returns up to 10 active users whose login starts with the query string.
+  # Used by the @mention autocomplete in note textareas.
+  # Logins in Redmine are full email addresses (e.g. balaji.j@vegam.co).
+  # We match on the local part (before @) and return only the local part
+  # as the mention token, since that is what create_for_mentions expects.
+  def mention_users
+    q = params[:q].to_s.strip.downcase
+    return render(json: []) if q.length < 1
+
+    users = User.active
+                .where('login LIKE ?', "#{q}%")
+                .order(:login)
+                .limit(10)
+
+    render json: users.map { |u|
+      local = u.login.split('@').first
+      { login: local, name: u.name, label: "#{u.name}  @#{local}" }
+    }
+  end
 end

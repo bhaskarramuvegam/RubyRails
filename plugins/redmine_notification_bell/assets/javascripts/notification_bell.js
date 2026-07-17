@@ -387,4 +387,162 @@
   } else {
     init();
   }
+
+  // ── @mention autocomplete ─────────────────────────────────────
+  // Shows a user suggestion dropdown when typing @word in any textarea.
+  // Works for all users — no admin privilege required.
+  // Uses the text_pattern_ops index via GET /notification_bells/mention_users?q=
+  (function mentionAutocomplete() {
+    var acDropdown  = null;   // the visible dropdown element
+    var acTarget    = null;   // textarea being typed in
+    var acMatchStart = -1;    // index of the @ in the textarea value
+    var acSelected  = -1;     // keyboard-highlighted row index
+    var acUsers     = [];     // current suggestion list
+    var acDebounce  = null;
+
+    // ── Build / get the shared dropdown element ───────────────
+    function getDropdown() {
+      if (acDropdown) return acDropdown;
+      acDropdown = document.createElement('ul');
+      acDropdown.id = 'nb-mention-dropdown';
+      document.body.appendChild(acDropdown);
+
+      acDropdown.addEventListener('mousedown', function (e) {
+        // mousedown fires before blur — prevent textarea losing focus
+        e.preventDefault();
+        var li = e.target.closest('li[data-login]');
+        if (li) insertMention(li.getAttribute('data-login'));
+      });
+      return acDropdown;
+    }
+
+    // ── Position dropdown below the textarea ──────────────────
+    function positionDropdown(textarea) {
+      var rect = textarea.getBoundingClientRect();
+      var dd   = getDropdown();
+      dd.style.left = (rect.left + window.scrollX) + 'px';
+      dd.style.top  = (rect.bottom + window.scrollY + 4) + 'px';
+      dd.style.width = Math.max(220, rect.width * 0.5) + 'px';
+    }
+
+    // ── Render suggestion rows ────────────────────────────────
+    function renderDropdown(users) {
+      acUsers    = users;
+      acSelected = -1;
+      var dd = getDropdown();
+      dd.innerHTML = '';
+      users.forEach(function (u, i) {
+        var li = document.createElement('li');
+        li.setAttribute('data-login', u.login);
+        li.setAttribute('data-index', i);
+        li.innerHTML =
+          '<span class="nb-ac-name">' + escapeHtml(u.name) + '</span>' +
+          '<span class="nb-ac-login">@' + escapeHtml(u.login) + '</span>';
+        dd.appendChild(li);
+      });
+      dd.style.display = 'block';
+    }
+
+    function hideDropdown() {
+      if (acDropdown) acDropdown.style.display = 'none';
+      acTarget     = null;
+      acMatchStart = -1;
+      acSelected   = -1;
+      acUsers      = [];
+    }
+
+    function highlightRow(idx) {
+      if (!acDropdown) return;
+      var rows = acDropdown.querySelectorAll('li');
+      rows.forEach(function (li, i) {
+        li.classList.toggle('nb-ac-active', i === idx);
+      });
+      acSelected = idx;
+    }
+
+    // ── Insert selected user into textarea ────────────────────
+    function insertMention(login) {
+      if (!acTarget) return;
+      var val    = acTarget.value;
+      var cursor = acTarget.selectionStart;
+      // Replace from the @ sign up to the cursor with @login + space
+      var before = val.substring(0, acMatchStart);
+      var after  = val.substring(cursor);
+      var insert = '@' + login + ' ';
+      acTarget.value = before + insert + after;
+      var newPos = before.length + insert.length;
+      acTarget.setSelectionRange(newPos, newPos);
+      acTarget.focus();
+      hideDropdown();
+    }
+
+    // ── Fetch suggestions (debounced 200ms) ───────────────────
+    function fetchSuggestions(q, textarea) {
+      clearTimeout(acDebounce);
+      acDebounce = setTimeout(function () {
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', '/notification_bells/mention_users?q=' + encodeURIComponent(q), true);
+        xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+        xhr.setRequestHeader('Accept', 'application/json');
+        xhr.onload = function () {
+          if (xhr.status !== 200) return;
+          try {
+            var users = JSON.parse(xhr.responseText);
+            if (users.length === 0) { hideDropdown(); return; }
+            positionDropdown(textarea);
+            renderDropdown(users);
+          } catch (e) { hideDropdown(); }
+        };
+        xhr.onerror = function () { hideDropdown(); };
+        xhr.send();
+      }, 200);
+    }
+
+    // ── Detect @word pattern before cursor ────────────────────
+    function onInput(e) {
+      var el = e.target;
+      if (el.tagName !== 'TEXTAREA') return;
+      var before = el.value.substring(0, el.selectionStart);
+      // Match @ preceded by space/newline/start, followed by word characters
+      var match  = before.match(/(^|[\s\n])@([\w.\-]*)$/);
+      if (!match) { hideDropdown(); return; }
+
+      var query = match[2];
+      acTarget     = el;
+      // acMatchStart = index of the @ character
+      acMatchStart = before.lastIndexOf('@');
+
+      if (query.length < 1) { hideDropdown(); return; }
+      fetchSuggestions(query, el);
+    }
+
+    // ── Keyboard navigation inside dropdown ───────────────────
+    function onKeydown(e) {
+      if (!acDropdown || acDropdown.style.display === 'none') return;
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        highlightRow(Math.min(acSelected + 1, acUsers.length - 1));
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        highlightRow(Math.max(acSelected - 1, 0));
+      } else if (e.key === 'Enter' || e.key === 'Tab') {
+        if (acSelected >= 0 && acUsers[acSelected]) {
+          e.preventDefault();
+          insertMention(acUsers[acSelected].login);
+        }
+      } else if (e.key === 'Escape') {
+        hideDropdown();
+      }
+    }
+
+    document.addEventListener('input',   onInput);
+    document.addEventListener('keydown', onKeydown);
+    document.addEventListener('click',   function (e) {
+      if (acDropdown && !acDropdown.contains(e.target)) hideDropdown();
+    });
+    document.addEventListener('scroll',  function () {
+      if (acTarget) positionDropdown(acTarget);
+    }, true);
+  })();
+
 })();
