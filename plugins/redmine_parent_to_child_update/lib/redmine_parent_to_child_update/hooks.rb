@@ -34,11 +34,11 @@ module RedmineParentToChildUpdate
           .child-req-field label { display:block; font-size:13px; margin-bottom:4px; color:#444; }
           .child-req-field input, .child-req-field select {
             width:100%; padding:7px; font-size:13px; box-sizing:border-box; }
-          .pcu-subtask-btn { display:inline-flex; align-items:center; gap:4px;
-            background:#1976D2; color:#fff !important; border:none; border-radius:3px;
-            padding:3px 10px; font-size:12px; cursor:pointer; text-decoration:none !important;
-            margin-right:6px; vertical-align:middle; white-space:nowrap; }
-          .pcu-subtask-btn:hover { background:#1565C0; color:#fff !important; }
+          .pcu-subtask-btn { display:inline-flex; align-items:center; gap:2px;
+            background:none; color:#1976D2 !important; border:none; border-radius:0;
+            padding:0; font-size:0.9em; cursor:pointer; text-decoration:none !important;
+            margin-right:8px; vertical-align:middle; white-space:nowrap; font-weight:bold; }
+          .pcu-subtask-btn:hover { color:#0d47a1 !important; text-decoration:underline !important; }
         </style>
       CSS
       css.html_safe
@@ -106,31 +106,34 @@ module RedmineParentToChildUpdate
       output << "#pcu-child-modal{"
       output << "  display:none;position:fixed;z-index:99999;left:0;top:0;"
       output << "  width:100%;height:100%;background:rgba(0,0,0,0.55);"
-      output << "  font-family:Arial,sans-serif;}"
+      output << "  font-family:Arial,sans-serif;overflow-y:auto;}"
       output << "#pcu-child-modal .pcu-modal-box{"
-      output << "  background:#fff;margin:6% auto;padding:26px 28px;"
-      output << "  border-radius:5px;width:560px;max-width:95%;"
-      output << "  box-shadow:0 6px 24px rgba(0,0,0,0.25);max-height:85vh;overflow-y:auto;}"
-      output << "#pcu-child-modal h3{margin:0 0 6px;color:#333;font-size:16px;}"
-      output << "#pcu-child-modal .pcu-desc{color:#666;font-size:13px;margin-bottom:16px;}"
-      output << "#pcu-child-modal label{font-weight:bold;font-size:13px;display:block;margin-bottom:4px;}"
-      output << "#pcu-child-modal select,#pcu-child-modal input[type=text]{"
-      output << "  width:100%;padding:7px;font-size:13px;box-sizing:border-box;"
-      output << "  border:1px solid #ccc;border-radius:3px;margin-top:2px;}"
-      output << ".pcu-field-block{margin-bottom:14px;}"
-      output << ".child-req-field{margin-bottom:11px;}"
-      output << ".child-req-field label{font-size:13px;font-weight:normal;color:#444;}"
-      output << ".child-req-field input,.child-req-field select{width:100%;padding:6px;font-size:13px;box-sizing:border-box;}"
-      output << "#pcu-status-msg{display:none;margin:10px 0;padding:8px;border-radius:3px;font-size:13px;}"
-      output << ".pcu-modal-btns{text-align:center;margin-top:20px;}"
-      output << ".pcu-modal-btns button{padding:9px 22px;margin:0 6px;font-size:14px;border-radius:3px;cursor:pointer;border:none;}"
+      output << "  background:#fff;margin:2% auto;padding:32px 36px;"
+      output << "  border-radius:5px;width:840px;max-width:95%;"
+      output << "  box-shadow:0 6px 24px rgba(0,0,0,0.25);max-height:92vh;overflow-y:auto;}"
+      output << "#pcu-child-modal h3{margin:0 0 8px;color:#333;font-size:20px;}"
+      output << "#pcu-child-modal .pcu-desc{color:#666;font-size:16px;margin-bottom:20px;}"
+      output << "#pcu-child-modal label{font-weight:bold;font-size:16px;display:block;margin-bottom:6px;}"
+      output << "#pcu-child-modal select,#pcu-child-modal input[type=text],#pcu-child-modal input[type=number],#pcu-child-modal input[type=date]{"
+      output << "  width:100%;padding:12px 14px;font-size:17px;box-sizing:border-box;"
+      output << "  border:1px solid #ccc;border-radius:4px;margin-top:4px;height:46px;}"
+      output << ".pcu-field-block{margin-bottom:20px;}"
+      output << ".child-req-field{margin-bottom:16px;}"
+      output << ".child-req-field label{font-size:16px;font-weight:bold;color:#333;margin-bottom:6px;display:block;}"
+      output << ".child-req-field input,.child-req-field select,.child-req-field textarea{"
+      output << "  width:100%;padding:12px 14px;font-size:17px;box-sizing:border-box;"
+      output << "  border:1px solid #ccc;border-radius:4px;height:46px;}"
+      output << ".child-req-field textarea{height:90px;resize:vertical;}"
+      output << "#pcu-status-msg{display:none;margin:12px 0;padding:10px;border-radius:3px;font-size:16px;}"
+      output << ".pcu-modal-btns{text-align:center;margin-top:24px;}"
+      output << ".pcu-modal-btns button{padding:11px 28px;margin:0 8px;font-size:17px;border-radius:3px;cursor:pointer;border:none;}"
       output << ".pcu-btn-yes{background:#4CAF50;color:#fff;} .pcu-btn-yes:hover{background:#43a047;}"
       output << ".pcu-btn-no{background:#f44336;color:#fff;} .pcu-btn-no:hover{background:#e53935;}"
-      output << ".pcu-subtask-btn{display:inline-flex;align-items:center;gap:4px;"
-      output << "  background:#1976D2;color:#fff !important;border:none;border-radius:3px;"
-      output << "  padding:3px 10px;font-size:12px;cursor:pointer;text-decoration:none !important;"
-      output << "  margin-right:6px;vertical-align:middle;white-space:nowrap;}"
-      output << ".pcu-subtask-btn:hover{background:#1565C0;color:#fff !important;}"
+      output << ".pcu-subtask-btn{display:inline-flex;align-items:center;gap:2px;"
+      output << "  background:none;color:#1976D2 !important;border:none;border-radius:0;"
+      output << "  padding:0;font-size:0.9em;cursor:pointer;text-decoration:none !important;"
+      output << "  margin-right:8px;vertical-align:middle;white-space:nowrap;font-weight:bold;}"
+      output << ".pcu-subtask-btn:hover{color:#0d47a1 !important;text-decoration:underline !important;}"
       output << "</style>"
 
       # ── Modal HTML (always rendered, hidden by default) ────────────────────
@@ -359,7 +362,7 @@ module RedmineParentToChildUpdate
       output << "  btn.href='#';"
       output << "  btn.className='pcu-subtask-btn';"
       output << "  btn.title='Create child issue via popup';"
-      output << "  btn.innerHTML='&#10133; Create Child';"
+      output << "  btn.innerHTML='CREATE CHILD';"
       output << "  btn.addEventListener('click',function(e){"
       output << "    e.preventDefault();"
       output << "    pcuCloseModal();"
@@ -367,6 +370,19 @@ module RedmineParentToChildUpdate
       output << "    pcuLoadRequiredFields(issueId);"
       output << "  });"
       output << "  addLink.parentNode.insertBefore(btn,addLink);"
+      # Make the parent container always visible (Redmine hides it until hover)
+      output << "  var container=addLink.parentNode;"
+      output << "  while(container&&container!==document.body){"
+      output << "    var cs=window.getComputedStyle(container);"
+      output << "    if(cs.display==='none'||cs.visibility==='hidden'||cs.opacity==='0'){"
+      output << "      container.style.cssText+='display:block!important;visibility:visible!important;opacity:1!important;';"
+      output << "    }"
+      output << "    if(container.className&&(container.className.indexOf('contextual')!==-1||container.className.indexOf('links')!==-1)) {"
+      output << "      container.style.cssText+='display:block!important;visibility:visible!important;opacity:1!important;';"
+      output << "      break;"
+      output << "    }"
+      output << "    container=container.parentNode;"
+      output << "  }"
       output << "}"
 
       # DOMContentLoaded — move modal to <body> so position:fixed works correctly,
