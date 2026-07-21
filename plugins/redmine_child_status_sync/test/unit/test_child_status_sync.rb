@@ -18,13 +18,25 @@ class ChildStatusSyncTest < ActiveSupport::TestCase
     @bug_tracker = Tracker.find_by(name: 'Bug') || Tracker.create!(name: 'Bug')
     @cr_bug_tracker = Tracker.find_by(name: 'CR_Bug') || Tracker.create!(name: 'CR_Bug')
 
-    # Ensure the restricted trackers setting matches plugin defaults for these tests
-    Setting.plugin_redmine_child_status_sync = Setting.plugin_redmine_child_status_sync.merge('restricted_trackers' => 'Bug,CR_Bug')
-
     # Create issue statuses
     @new_status = IssueStatus.find_by(name: 'New') || IssueStatus.create!(name: 'New', is_closed: false)
     @dev_in_progress_status = IssueStatus.find_by(name: 'Development In Progress') || IssueStatus.create!(name: 'In Progress', is_closed: false)
     @dev_in_progress_status.update(name: 'Development In Progress') if @dev_in_progress_status.name != 'Development In Progress'
+    @dev_completed_status = IssueStatus.find_by(name: 'Development Completed') || IssueStatus.create!(name: 'Development Completed', is_closed: false)
+
+    # Ensure the plugin settings match plugin defaults for these tests, regardless of whatever
+    # is already persisted in the test database from a previous run.
+    Setting.plugin_redmine_child_status_sync = Setting.plugin_redmine_child_status_sync.merge(
+      'restricted_trackers' => 'Bug,CR_Bug',
+      'restricted_statuses' => 'OnHold,Completed,Closed,Cancelled',
+      'status_order' => [
+        'New', 'A&D In Progress', 'A&D Completed', 'UX/UI Design In Progress', 'UX/UI Design Completed',
+        'UI Development In Progress', 'UI Development Completed', 'Development In Progress', 'Development Completed',
+        'Code Under Review', 'Code Reviewed', 'Released to 203', 'Local Testing In Progress', 'Internal Demo Completed',
+        'Local Testing Completed', 'Released in UAT Server', 'UAT Feedback Awaited', 'UAT Observation Received',
+        'UAT Signoff Received', 'Released to Production'
+      ].join("\n")
+    )
 
     # Create parent issue
     @parent_issue = Issue.create!(
@@ -276,5 +288,107 @@ class ChildStatusSyncTest < ActiveSupport::TestCase
     @parent_issue.reload
     assert_equal @dev_in_progress_status.id, @parent_issue.status_id,
                  "With no restricted trackers configured, all trackers should sync as before"
+  end
+
+  test "parent status does not move backward when child regresses in the status order" do
+    # Parent is already further along than the child is about to become
+    @parent_issue.update_column(:status_id, @dev_completed_status.id)
+
+    child_issue = Issue.create!(
+      project: @project,
+      tracker: @tracker,
+      subject: 'Child Task',
+      status: @dev_in_progress_status,
+      parent_id: @parent_issue.id
+    )
+
+    # Child regresses to an earlier status in the configured order
+    child_issue.status = @new_status
+    child_issue.save!
+
+    @parent_issue.reload
+    assert_equal @dev_completed_status.id, @parent_issue.status_id,
+                 "Parent should not be moved backward when the child regresses to an earlier status in the configured order"
+  end
+
+  test "parent status still moves forward when child advances further in the status order" do
+    @parent_issue.update_column(:status_id, @new_status.id)
+
+    child_issue = Issue.create!(
+      project: @project,
+      tracker: @tracker,
+      subject: 'Child Task',
+      status: @dev_in_progress_status,
+      parent_id: @parent_issue.id
+    )
+
+    child_issue.status = @dev_completed_status
+    child_issue.save!
+
+    @parent_issue.reload
+    assert_equal @dev_completed_status.id, @parent_issue.status_id,
+                 "Parent should move forward when the child advances further along the configured order"
+  end
+
+  test "falls back to allowing sync when a status is not part of the configured order" do
+    custom_status = IssueStatus.find_by(name: 'Totally Custom Status') || IssueStatus.create!(name: 'Totally Custom Status', is_closed: false)
+
+    @parent_issue.update_column(:status_id, @dev_completed_status.id)
+
+    child_issue = Issue.create!(
+      project: @project,
+      tracker: @tracker,
+      subject: 'Child Task',
+      status: @new_status,
+      parent_id: @parent_issue.id
+    )
+
+    child_issue.status = custom_status
+    child_issue.save!
+
+    @parent_issue.reload
+    assert_equal custom_status.id, @parent_issue.status_id,
+                 "When the new status isn't part of the configured order, sync should proceed as before"
+  end
+
+  %w[OnHold Completed Closed Cancelled].each do |restricted_status_name|
+    test "parent status does not update when child moves to restricted status #{restricted_status_name}" do
+      status = IssueStatus.find_by(name: restricted_status_name) || IssueStatus.create!(name: restricted_status_name, is_closed: false)
+
+      child_issue = Issue.create!(
+        project: @project,
+        tracker: @tracker,
+        subject: 'Child Task',
+        status: @new_status,
+        parent_id: @parent_issue.id
+      )
+
+      child_issue.status = status
+      child_issue.save!
+
+      @parent_issue.reload
+      assert_equal @new_status.id, @parent_issue.status_id,
+                   "Parent issue status should not change when child moves to restricted status #{restricted_status_name}"
+    end
+  end
+
+  test "blank restricted statuses setting allows all statuses to sync" do
+    Setting.plugin_redmine_child_status_sync = Setting.plugin_redmine_child_status_sync.merge('restricted_statuses' => '')
+    onhold_status = IssueStatus.find_by(name: 'OnHold') || IssueStatus.create!(name: 'OnHold', is_closed: false)
+
+    child_issue = Issue.create!(
+      project: @project,
+      tracker: @tracker,
+      subject: 'Child Task',
+      status: @new_status,
+      parent_id: @parent_issue.id
+    )
+
+    child_issue.status = onhold_status
+    child_issue.save!
+
+    @parent_issue.reload
+    assert_equal onhold_status.id, @parent_issue.status_id,
+                 "With no restricted statuses configured, all statuses should sync as before"
   end
 end

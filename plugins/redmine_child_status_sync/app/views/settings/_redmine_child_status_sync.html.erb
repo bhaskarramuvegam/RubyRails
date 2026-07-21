@@ -28,11 +28,38 @@
     </em>
   </p>
 
+  <p>
+    <label for="settings_status_order">Status Flow Order (one status name per line, earliest first)</label><br>
+    <%= text_area_tag 'settings[status_order]', @settings['status_order'], rows: 22, cols: 60, style: 'font-family: monospace;' %>
+    <em style="display: block; margin-top: 5px; color: #666;">
+      Defines the order the workflow moves through. A child issue's new status will only be pushed onto a parent
+      when it is <strong>ahead</strong> of the parent's current status in this list &mdash; a child moving to an
+      earlier/previous status in the list will never move a parent backwards.
+      If a new status is added to the workflow later, add its name on its own line here (in the right position)
+      so it gets picked up &mdash; no code change needed. A status missing from this list is treated as unordered
+      and its sync will not be blocked by ordering.
+    </em>
+  </p>
+
+  <p>
+    <label for="settings_restricted_statuses">Restricted Statuses (never propagate to parent)</label><br>
+    <%= text_field_tag 'settings[restricted_statuses]', @settings['restricted_statuses'], size: 60 %>
+    <em style="display: block; margin-top: 5px; color: #666;">
+      Comma-separated status names, e.g. <code>OnHold,Completed,Closed,Cancelled</code>. When a child issue changes
+      to one of these statuses, that change is <strong>never</strong> propagated to any parent issue &mdash;
+      regardless of tracker or status order. Add any new terminal/paused status here if it should behave the same way.
+    </em>
+  </p>
+
   <p style="margin-top: 20px; padding: 10px; background-color: #f5f5f5; border-left: 3px solid #2196F3;">
     <strong>How it works:</strong><br>
-    When a child issue's status is updated to any status, this plugin automatically updates the parent issue's status to match,
-    unless the child issue's tracker is listed under "Restricted Trackers" above.
-    This ensures parent tasks reflect the current progress of their subtasks, without Bug/CR_Bug issues driving the status
-    of their parents.
+    When a child issue's status changes, this plugin updates each parent issue's status to match, unless any of the
+    following apply:
+    <ul style="margin: 5px 0 0 20px;">
+      <li>the child issue's tracker is listed under "Restricted Trackers" (e.g. Bug, CR_Bug never update parents)</li>
+      <li>the child's new status is listed under "Restricted Statuses" (e.g. OnHold, Completed, Closed, Cancelled never update parents)</li>
+      <li>the child's new status is not ahead of the parent's current status in the "Status Flow Order" (parents are never moved backwards)</li>
+    </ul>
+    This keeps auto status sync on the normal Task &rarr; User Story &rarr; CR forward-moving flow.
   </p>
 </div>

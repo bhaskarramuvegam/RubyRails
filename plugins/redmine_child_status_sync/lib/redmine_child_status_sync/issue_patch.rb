@@ -49,6 +49,14 @@ module RedmineChildStatusSync
 
         Rails.logger.info("Status changed: #{status_change_from} → #{status_id}") if debug_logging
 
+        # Restricted statuses (e.g. OnHold, Completed, Closed, Cancelled) never propagate to parents,
+        # regardless of tracker or position in the status order.
+        if restricted_status?(status_id)
+          new_status_name = IssueStatus.find_by(id: status_id)&.name
+          Rails.logger.info("SKIPPED: Status '#{new_status_name}' is restricted from updating parent status") if debug_logging
+          return
+        end
+
         parent_issues.each do |parent_issue|
           next unless parent_issue
 
@@ -56,6 +64,12 @@ module RedmineChildStatusSync
 
           if parent_issue.status_id != status_id
             Rails.logger.info("Status mismatch: Parent #{parent_issue.status_id} != Child #{status_id}") if debug_logging
+
+            unless forward_status_transition?(parent_issue.status_id, status_id)
+              Rails.logger.info("SKIPPED parent ##{parent_issue.id}: new status is not ahead of the parent's current status in the configured status order") if debug_logging
+              next
+            end
+
             Rails.logger.info("Attempting to update parent status...") if debug_logging
 
             begin
@@ -83,6 +97,45 @@ module RedmineChildStatusSync
         return false if restricted_names.empty?
 
         restricted_names.include?(tracker&.name.to_s.downcase)
+      end
+
+      def restricted_status?(status_id_value)
+        restricted_names = Setting.plugin_redmine_child_status_sync['restricted_statuses'].to_s
+                                   .split(',').map { |name| name.strip.downcase }.reject(&:blank?)
+        return false if restricted_names.empty?
+
+        status_name = IssueStatus.find_by(id: status_id_value)&.name
+        restricted_names.include?(status_name.to_s.downcase)
+      end
+
+      # Ordered list of status names configured on the plugin settings page (one per line).
+      # Editing this list is how new statuses get slotted into the flow - no code change needed.
+      def configured_status_order
+        Setting.plugin_redmine_child_status_sync['status_order'].to_s
+               .split(/\r?\n/).map(&:strip).reject(&:blank?)
+      end
+
+      def status_order_index(status_id_value)
+        return nil unless status_id_value
+
+        status_name = IssueStatus.find_by(id: status_id_value)&.name
+        return nil unless status_name
+
+        order = configured_status_order.map(&:downcase)
+        index = order.index(status_name.downcase)
+        index
+      end
+
+      # Only allow a parent's status to move forward through the configured order.
+      # If either status isn't found in the configured list, fall back to allowing the sync,
+      # since we have no ordering information to restrict on.
+      def forward_status_transition?(from_status_id, to_status_id)
+        from_index = status_order_index(from_status_id)
+        to_index = status_order_index(to_status_id)
+
+        return true if from_index.nil? || to_index.nil?
+
+        to_index > from_index
       end
 
       def status_changed?
