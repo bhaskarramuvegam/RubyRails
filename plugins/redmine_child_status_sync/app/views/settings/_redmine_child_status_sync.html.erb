@@ -62,4 +62,36 @@
     </ul>
     This keeps auto status sync on the normal Task &rarr; User Story &rarr; CR forward-moving flow.
   </p>
+
+  <p>
+    <label for="settings_custom_field_sync_trackers">Custom Field Sync Trackers</label><br>
+    <%= text_field_tag 'settings[custom_field_sync_trackers]', @settings['custom_field_sync_trackers'], size: 60 %>
+    <em style="display: block; margin-top: 5px; color: #666;">
+      Comma-separated tracker names, e.g. <code>Task</code>. Only issues of these trackers will push the custom
+      field values below up to their parent issues; every other tracker is left untouched by this feature.
+    </em>
+  </p>
+
+  <p>
+    <label for="settings_custom_field_sync_fields">Custom Field Sync Fields</label><br>
+    <%= text_field_tag 'settings[custom_field_sync_fields]', @settings['custom_field_sync_fields'], size: 60 %>
+    <em style="display: block; margin-top: 5px; color: #666;">
+      Comma-separated custom field names, e.g. <code>Actual start date,Actual end date</code>. When an eligible
+      issue (see "Custom Field Sync Trackers" above) is saved with one of these fields set to a different value than
+      its parent currently has, the parent's value is updated to match. Add a new field name here (it must match an
+      existing custom field's name exactly) to bring it into the sync &mdash; no code change needed.
+    </em>
+    <em style="display: block; margin-top: 5px; color: #888; font-style: italic;">
+      Available issue custom fields (copy the exact spelling from here):
+      <%= IssueCustomField.order(:name).pluck(:name).join(', ').presence || 'none defined yet' %>
+    </em>
+  </p>
+
+  <p style="margin-top: 20px; padding: 10px; background-color: #f5f5f5; border-left: 3px solid #2196F3;">
+    <strong>Custom field sync:</strong><br>
+    Independently of the status sync above, this plugin also keeps the "Custom Field Sync Fields" values (by default
+    Actual start date and Actual end date) in sync from a child issue up to its parents &mdash; but only for issues
+    whose tracker is listed under "Custom Field Sync Trackers" (by default only <strong>Task</strong>). Issues of any
+    other tracker never push these custom field values to their parents.
+  </p>
 </div>

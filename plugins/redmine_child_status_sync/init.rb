@@ -43,6 +43,8 @@ Redmine::Plugin.register :redmine_child_status_sync do
     'enable_logging' => '1',
     'restricted_trackers' => 'Bug,CR_Bug',
     'status_order' => DEFAULT_CHILD_STATUS_SYNC_STATUS_ORDER,
-    'restricted_statuses' => 'OnHold,Completed,Closed,Cancelled'
+    'restricted_statuses' => 'OnHold,Completed,Closed,Cancelled',
+    'custom_field_sync_trackers' => 'Task',
+    'custom_field_sync_fields' => 'Actual start date,Actual end date'
   }, partial: 'settings/redmine_child_status_sync'
 end

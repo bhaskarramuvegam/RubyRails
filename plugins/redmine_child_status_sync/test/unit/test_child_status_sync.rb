@@ -24,6 +24,12 @@ class ChildStatusSyncTest < ActiveSupport::TestCase
     @dev_in_progress_status.update(name: 'Development In Progress') if @dev_in_progress_status.name != 'Development In Progress'
     @dev_completed_status = IssueStatus.find_by(name: 'Development Completed') || IssueStatus.create!(name: 'Development Completed', is_closed: false)
 
+    # Custom fields used by the Task -> parent custom field sync feature
+    @actual_start_date_field = IssueCustomField.find_by(name: 'Actual start date') ||
+                                IssueCustomField.create!(name: 'Actual start date', field_format: 'date', is_for_all: true, is_filter: false)
+    @actual_end_date_field = IssueCustomField.find_by(name: 'Actual end date') ||
+                             IssueCustomField.create!(name: 'Actual end date', field_format: 'date', is_for_all: true, is_filter: false)
+
     # Ensure the plugin settings match plugin defaults for these tests, regardless of whatever
     # is already persisted in the test database from a previous run.
     Setting.plugin_redmine_child_status_sync = Setting.plugin_redmine_child_status_sync.merge(
@@ -35,7 +41,9 @@ class ChildStatusSyncTest < ActiveSupport::TestCase
         'Code Under Review', 'Code Reviewed', 'Released to 203', 'Local Testing In Progress', 'Internal Demo Completed',
         'Local Testing Completed', 'Released in UAT Server', 'UAT Feedback Awaited', 'UAT Observation Received',
         'UAT Signoff Received', 'Released to Production'
-      ].join("\n")
+      ].join("\n"),
+      'custom_field_sync_trackers' => 'Task',
+      'custom_field_sync_fields' => 'Actual start date,Actual end date'
     )
 
     # Create parent issue
@@ -390,5 +398,131 @@ class ChildStatusSyncTest < ActiveSupport::TestCase
     @parent_issue.reload
     assert_equal onhold_status.id, @parent_issue.status_id,
                  "With no restricted statuses configured, all statuses should sync as before"
+  end
+
+  test "parent custom field is updated when a Task child's Actual start date changes" do
+    child_issue = Issue.create!(
+      project: @project,
+      tracker: @tracker,
+      subject: 'Child Task',
+      status: @new_status,
+      parent_id: @parent_issue.id
+    )
+
+    child_issue.custom_field_values = { @actual_start_date_field.id => '2026-01-15' }
+    child_issue.save!
+
+    @parent_issue.reload
+    assert_equal '2026-01-15', @parent_issue.custom_field_value(@actual_start_date_field.id)
+  end
+
+  test "parent custom field is updated when a Task child's Actual end date changes" do
+    child_issue = Issue.create!(
+      project: @project,
+      tracker: @tracker,
+      subject: 'Child Task',
+      status: @new_status,
+      parent_id: @parent_issue.id
+    )
+
+    child_issue.custom_field_values = { @actual_end_date_field.id => '2026-02-20' }
+    child_issue.save!
+
+    @parent_issue.reload
+    assert_equal '2026-02-20', @parent_issue.custom_field_value(@actual_end_date_field.id)
+  end
+
+  test "parent custom field is not updated when the child's tracker is not configured for custom field sync" do
+    child_issue = Issue.create!(
+      project: @project,
+      tracker: @bug_tracker,
+      subject: 'Bug Child',
+      status: @new_status,
+      parent_id: @parent_issue.id
+    )
+
+    child_issue.custom_field_values = { @actual_start_date_field.id => '2026-01-15' }
+    child_issue.save!
+
+    @parent_issue.reload
+    assert_equal '', @parent_issue.custom_field_value(@actual_start_date_field.id).to_s,
+                 "Parent custom field should stay blank when the updating child's tracker isn't Task"
+  end
+
+  test "custom field sync trackers setting is configurable to allow additional trackers" do
+    Setting.plugin_redmine_child_status_sync = Setting.plugin_redmine_child_status_sync.merge('custom_field_sync_trackers' => 'Task,Bug')
+
+    child_issue = Issue.create!(
+      project: @project,
+      tracker: @bug_tracker,
+      subject: 'Bug Child',
+      status: @new_status,
+      parent_id: @parent_issue.id
+    )
+
+    child_issue.custom_field_values = { @actual_start_date_field.id => '2026-03-01' }
+    child_issue.save!
+
+    @parent_issue.reload
+    assert_equal '2026-03-01', @parent_issue.custom_field_value(@actual_start_date_field.id)
+  end
+
+  test "blank custom field sync trackers setting disables custom field sync entirely" do
+    Setting.plugin_redmine_child_status_sync = Setting.plugin_redmine_child_status_sync.merge('custom_field_sync_trackers' => '')
+
+    child_issue = Issue.create!(
+      project: @project,
+      tracker: @tracker,
+      subject: 'Child Task',
+      status: @new_status,
+      parent_id: @parent_issue.id
+    )
+
+    child_issue.custom_field_values = { @actual_start_date_field.id => '2026-01-15' }
+    child_issue.save!
+
+    @parent_issue.reload
+    assert_equal '', @parent_issue.custom_field_value(@actual_start_date_field.id).to_s,
+                 "With no trackers configured for custom field sync, no tracker (including Task) should propagate"
+  end
+
+  test "custom field sync only propagates fields listed in custom_field_sync_fields" do
+    Setting.plugin_redmine_child_status_sync = Setting.plugin_redmine_child_status_sync.merge('custom_field_sync_fields' => 'Actual start date')
+
+    child_issue = Issue.create!(
+      project: @project,
+      tracker: @tracker,
+      subject: 'Child Task',
+      status: @new_status,
+      parent_id: @parent_issue.id
+    )
+
+    child_issue.custom_field_values = {
+      @actual_start_date_field.id => '2026-01-15',
+      @actual_end_date_field.id => '2026-01-31'
+    }
+    child_issue.save!
+
+    @parent_issue.reload
+    assert_equal '2026-01-15', @parent_issue.custom_field_value(@actual_start_date_field.id)
+    assert_equal '', @parent_issue.custom_field_value(@actual_end_date_field.id).to_s,
+                 "Actual end date should not sync when it isn't listed in custom_field_sync_fields"
+  end
+
+  test "custom field sync skips unknown custom field names without raising" do
+    Setting.plugin_redmine_child_status_sync = Setting.plugin_redmine_child_status_sync.merge('custom_field_sync_fields' => 'Totally Unknown Field')
+
+    child_issue = Issue.create!(
+      project: @project,
+      tracker: @tracker,
+      subject: 'Child Task',
+      status: @new_status,
+      parent_id: @parent_issue.id
+    )
+
+    child_issue.subject = 'Child Task Updated'
+    child_issue.save!
+
+    assert true # Test passes if no exception is raised
   end
 end
