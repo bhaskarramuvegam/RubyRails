@@ -8,7 +8,6 @@ module RedmineChildStatusSync
       base.send(:include, InstanceMethods)
       base.class_eval do
         after_save :sync_parent_status_on_child_update
-        after_save :sync_parent_custom_fields_on_child_update
       end
     end
 
@@ -90,84 +89,6 @@ module RedmineChildStatusSync
         end
 
         Rails.logger.info("===== CHILD STATUS SYNC DEBUG END =====") if debug_logging
-      end
-
-      # Propagates specific custom field values (e.g. Actual start date / Actual end date) from a
-      # child issue up to its parent issues. Unlike the status sync above, this is opt-in per tracker -
-      # by default only issues of the "Task" tracker trigger it. Both the eligible trackers and the
-      # synced custom field names are configurable from the plugin settings page, so future changes
-      # (a new tracker, a new date field) don't need a code change.
-      def sync_parent_custom_fields_on_child_update
-        unless Setting.plugin_redmine_child_status_sync['enabled'] == '1'
-          return
-        end
-
-        debug_logging = Setting.plugin_redmine_child_status_sync['enable_logging'] == '1'
-
-        unless custom_field_sync_tracker?
-          Rails.logger.info("SKIPPED custom field sync: tracker '#{tracker&.name}' is not configured for custom field sync") if debug_logging
-          return
-        end
-
-        parent_issues = collect_parent_issues
-        if parent_issues.empty?
-          Rails.logger.info("SKIPPED custom field sync: no parent issues found") if debug_logging
-          return
-        end
-
-        configured_custom_field_sync_names.each do |field_name|
-          custom_field = CustomField.find_by(name: field_name)
-          unless custom_field
-            Rails.logger.info("SKIPPED custom field sync: no custom field named '#{field_name}' found") if debug_logging
-            next
-          end
-
-          child_value = raw_custom_field_value(self, custom_field.id)
-
-          parent_issues.each do |parent_issue|
-            next unless parent_issue
-
-            parent_value = raw_custom_field_value(parent_issue, custom_field.id)
-            next if parent_value == child_value
-
-            begin
-              write_custom_field_value(parent_issue, custom_field.id, child_value)
-              Rails.logger.info("Child Status Sync: Updated parent issue ##{parent_issue.id} custom field '#{field_name}' to '#{child_value}' because child ##{id} (#{tracker&.name}) was updated") if debug_logging
-            rescue => e
-              Rails.logger.error("ERROR updating parent issue ##{parent_issue.id} custom field '#{field_name}': #{e.message}")
-              Rails.logger.error(e.backtrace.join("\n"))
-            end
-          end
-        end
-      end
-
-      def custom_field_sync_tracker?
-        allowed_names = Setting.plugin_redmine_child_status_sync['custom_field_sync_trackers'].to_s
-                                .split(',').map { |name| name.strip.downcase }.reject(&:blank?)
-        return false if allowed_names.empty?
-
-        allowed_names.include?(tracker&.name.to_s.downcase)
-      end
-
-      def configured_custom_field_sync_names
-        Setting.plugin_redmine_child_status_sync['custom_field_sync_fields'].to_s
-               .split(/[\r\n,]+/).map(&:strip).reject(&:blank?)
-      end
-
-      # Reads the raw stored value directly, bypassing Issue-level custom field casting/validation -
-      # mirrors the update_column bypass already used for status_id above.
-      def raw_custom_field_value(issue, custom_field_id)
-        CustomValue.find_by(customized_type: 'Issue', customized_id: issue.id, custom_field_id: custom_field_id)&.value
-      end
-
-      def write_custom_field_value(issue, custom_field_id, value)
-        custom_value = CustomValue.find_or_initialize_by(
-          customized_type: 'Issue',
-          customized_id: issue.id,
-          custom_field_id: custom_field_id
-        )
-        custom_value.value = value.to_s
-        custom_value.save!
       end
 
       def restricted_tracker?
