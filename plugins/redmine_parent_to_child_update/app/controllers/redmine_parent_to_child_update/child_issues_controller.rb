@@ -10,15 +10,16 @@ module RedmineParentToChildUpdate
     # All supported standard Redmine issue fields for the popup.
     # Add new entries here as Redmine gains new fields — they auto-appear in admin config.
     STANDARD_POPUP_FIELDS = {
-      'estimated_hours'  => { name: 'Estimated Time',  format: 'float'    },
-      'start_date'       => { name: 'Start Date',       format: 'date'     },
-      'due_date'         => { name: 'Due Date',         format: 'date'     },
-      'done_ratio'       => { name: '% Done',           format: 'int'      },
-      'description'      => { name: 'Description',      format: 'text'     },
-      'assigned_to_id'   => { name: 'Assigned To',      format: 'select'   },
-      'priority_id'      => { name: 'Priority',         format: 'select'   },
-      'category_id'      => { name: 'Category',         format: 'select'   },
-      'fixed_version_id' => { name: 'Target Version',   format: 'select'   },
+      'status_id'        => { name: ->{ l(:field_status)          }, format: 'select' },
+      'description'      => { name: ->{ l(:field_description)     }, format: 'text'   },
+      'priority_id'      => { name: ->{ l(:field_priority)        }, format: 'select' },
+      'assigned_to_id'   => { name: ->{ l(:field_assigned_to)     }, format: 'select' },
+      'category_id'      => { name: ->{ l(:field_category)        }, format: 'select' },
+      'fixed_version_id' => { name: ->{ l(:field_fixed_version)   }, format: 'select' },
+      'start_date'       => { name: ->{ l(:field_start_date)      }, format: 'date'   },
+      'due_date'         => { name: ->{ l(:field_due_date)        }, format: 'date'   },
+      'estimated_hours'  => { name: ->{ l(:field_estimated_hours) }, format: 'float'  },
+      'done_ratio'       => { name: ->{ l(:field_done_ratio)      }, format: 'int'    },
     }.freeze
 
     # Return fields (standard + custom) to display in the child-creation popup.
@@ -48,7 +49,7 @@ module RedmineParentToChildUpdate
         opts = {
           id:              "std_#{key}",
           std_key:         key,
-          name:            defn[:name],
+          name:            defn[:name].respond_to?(:call) ? defn[:name].call : defn[:name],
           field_format:    defn[:format],
           possible_values: [],
           default_value:   '',
@@ -58,6 +59,10 @@ module RedmineParentToChildUpdate
         }
 
         case key
+        when 'status_id'
+          opts[:possible_values] = IssueStatus.sorted.map { |s| { value: s.id.to_s, label: s.name } }
+          default_status = IssueStatus.default || IssueStatus.first
+          opts[:value] = default_status&.id.to_s
         when 'estimated_hours'
           opts[:value] = @issue.estimated_hours.to_s
         when 'start_date'
@@ -155,6 +160,7 @@ module RedmineParentToChildUpdate
           params[:std_fields].each do |key, value|
             next if value.blank?
             case key.to_s
+            when 'status_id'        then primary_child.status_id        = value.to_i
             when 'estimated_hours'  then primary_child.estimated_hours  = value.to_f
             when 'start_date'       then primary_child.start_date       = value
             when 'due_date'         then primary_child.due_date         = value

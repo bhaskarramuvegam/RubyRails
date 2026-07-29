@@ -218,57 +218,74 @@
     SECTION 4 – Popup Fields Per Child Tracker
     ═══════════════════════════════════════════════════════════════════════════ %>
 <%
-  # Standard Redmine issue fields that can be shown in the child-creation popup.
-  # These are read from Redmine's own field list — add new keys here as Redmine
-  # gains new standard fields and they will automatically appear in the selector.
-  pcu_standard_fields = [
-    { key: 'estimated_hours',  name: 'Estimated Time',  required: false },
-    { key: 'start_date',       name: 'Start Date',      required: false },
-    { key: 'due_date',         name: 'Due Date',        required: false },
-    { key: 'done_ratio',       name: '% Done',          required: false },
-    { key: 'description',      name: 'Description',     required: false },
-    { key: 'assigned_to_id',   name: 'Assigned To',     required: false },
-    { key: 'priority_id',      name: 'Priority',        required: false },
-    { key: 'category_id',      name: 'Category',        required: false },
-    { key: 'fixed_version_id', name: 'Target Version',  required: false },
+  # Standard Redmine fields in the order they appear in the Redmine issue form.
+  # core_key matches what tracker.core_fields returns so we can filter per tracker.
+  # Names use Redmine's own i18n labels for exact match with the UI.
+  pcu_all_std = [
+    { key: 'status_id',        core_key: 'status_id',        name: l(:field_status)          },
+    { key: 'description',      core_key: 'description',      name: l(:field_description)     },
+    { key: 'priority_id',      core_key: 'priority_id',      name: l(:field_priority)        },
+    { key: 'assigned_to_id',   core_key: 'assigned_to_id',   name: l(:field_assigned_to)     },
+    { key: 'category_id',      core_key: 'category_id',      name: l(:field_category)        },
+    { key: 'fixed_version_id', core_key: 'fixed_version_id', name: l(:field_fixed_version)   },
+    { key: 'start_date',       core_key: 'start_date',       name: l(:field_start_date)      },
+    { key: 'due_date',         core_key: 'due_date',         name: l(:field_due_date)        },
+    { key: 'estimated_hours',  core_key: 'estimated_hours',  name: l(:field_estimated_hours) },
+    { key: 'done_ratio',       core_key: 'done_ratio',       name: l(:field_done_ratio)      },
   ]
+
+  popup_cfg    = (@settings['tracker_popup_fields'] || {}).transform_keys(&:to_s)
+  all_trackers = Tracker.order(:position, :name)
 %>
 <div class="pcu-box">
   <div class="pcu-box-head">Popup Fields Per Child Tracker</div>
   <div class="pcu-box-body">
 
     <p style="margin:0 0 14px;color:#555;font-size:13px;">
-      For each child tracker, choose which fields appear in the <em>Create Child Issue</em> popup.
-      Both <strong>standard Redmine fields</strong> (Estimated Time, Start Date, etc.) and
-      <strong>custom fields</strong> for that tracker are available.
-      Use <strong>+ Add</strong> to add a field and <strong>×</strong> to remove it.
+      For each child tracker, choose which fields appear in the <em>Create Child Tracker</em> popup.
+      Fields default to <strong>all applicable fields</strong> for that tracker (matching the Redmine issue form).
+      Use <strong>+ Add</strong> to add a field, <strong>×</strong> to remove, or the
+      <strong>Select All / Clear All</strong> buttons.
     </p>
-
-    <%
-      popup_cfg    = (@settings['tracker_popup_fields'] || {}).transform_keys(&:to_s)
-      all_trackers = Tracker.order(:name)
-    %>
 
     <% if all_trackers.empty? %>
       <p class="pcu-no-trackers">No trackers found in this Redmine instance.</p>
     <% else %>
       <% all_trackers.each do |tracker| %>
         <%
-          all_cfs   = tracker.custom_fields.order(:name)
-          sel_ids   = Array(popup_cfg[tracker.id.to_s]).map(&:to_s).uniq
-          tid       = tracker.id
+          tid = tracker.id
 
-          # Split selected IDs into standard (prefix "std_") and custom (numeric strings)
-          sel_std_keys = sel_ids.select { |v| v.start_with?('std_') }.map { |v| v.sub('std_', '') }
-          sel_cf_ids   = sel_ids.reject { |v| v.start_with?('std_') }
+          # Custom fields ordered by position (same order as Redmine issue form)
+          all_cfs = tracker.custom_fields.order(:position, :name)
 
-          sel_std   = pcu_standard_fields.select { |f| sel_std_keys.include?(f[:key]) }
-          avail_std = pcu_standard_fields.reject  { |f| sel_std_keys.include?(f[:key]) }
+          # Standard fields enabled for this tracker (via tracker.core_fields if available)
+          tracker_core = tracker.respond_to?(:core_fields) ? Array(tracker.core_fields).map(&:to_s) : []
+          pcu_std = pcu_all_std.select { |f|
+            # status, description and priority are always shown in Redmine issue form
+            %w[status_id description priority_id].include?(f[:core_key]) ||
+            tracker_core.include?(f[:core_key])
+          }
 
-          sel_cfs   = all_cfs.select { |cf| sel_cf_ids.include?(cf.id.to_s) }
-          avail_cfs = all_cfs.reject  { |cf| sel_cf_ids.include?(cf.id.to_s) }
+          # Saved config for this tracker
+          sel_ids = Array(popup_cfg[tid.to_s]).map(&:to_s).uniq
+          never_configured = sel_ids.empty?
 
-          total_sel = sel_std.size + sel_cfs.size
+          # If never configured, auto-select ALL fields for this tracker
+          if never_configured
+            sel_std_keys = pcu_std.map { |f| f[:key] }
+            sel_cf_ids   = all_cfs.map  { |cf| cf.id.to_s }
+          else
+            sel_std_keys = sel_ids.select { |v| v.start_with?('std_') }.map { |v| v.sub('std_', '') }
+            sel_cf_ids   = sel_ids.reject { |v| v.start_with?('std_') }.map(&:to_s)
+          end
+
+          sel_std   = pcu_std.select  { |f|  sel_std_keys.include?(f[:key]) }
+          avail_std = pcu_std.reject   { |f|  sel_std_keys.include?(f[:key]) }
+          sel_cfs   = all_cfs.select  { |cf| sel_cf_ids.include?(cf.id.to_s) }
+          avail_cfs = all_cfs.reject   { |cf| sel_cf_ids.include?(cf.id.to_s) }
+
+          total_sel   = sel_std.size + sel_cfs.size
+          total_avail = pcu_std.size + all_cfs.size
         %>
 
         <div class="pcu-tracker" id="pcu-tracker-<%= tid %>">
@@ -279,17 +296,17 @@
               <%= tracker.name %>
               <span class="pcu-count-badge" id="pcu-count-<%= tid %>"><%= total_sel %></span>
               <span style="color:#888;font-weight:normal;font-size:11px;">
-                field<%= total_sel == 1 ? '' : 's' %> in popup
+                / <%= total_avail %> field<%= total_avail == 1 ? '' : 's' %> in popup
               </span>
             </span>
-            <span class="pcu-arrow" id="pcu-arrow-<%= tid %>"><%= total_sel > 0 ? '▲' : '▼' %></span>
+            <span class="pcu-arrow" id="pcu-arrow-<%= tid %>">▼</span>
           </div>
 
           <%# ── accordion body ───────────────────────────────────────────── %>
-          <div class="pcu-tracker-bd <%= 'open' if total_sel > 0 %>" id="pcu-body-<%= tid %>">
+          <div class="pcu-tracker-bd" id="pcu-body-<%= tid %>">
 
-            <%# Hidden checkboxes for standard fields ──────────────────── %>
-            <% pcu_standard_fields.each do |sf| %>
+            <%# Hidden checkboxes for ALL standard fields for this tracker %>
+            <% pcu_std.each do |sf| %>
               <%= check_box_tag "settings[tracker_popup_fields][#{tid}][]",
                     "std_#{sf[:key]}",
                     sel_std_keys.include?(sf[:key]),
@@ -299,7 +316,7 @@
                     data:  { tid: tid, fid: "std_#{sf[:key]}", name: sf[:name], required: '0', ftype: 'std' } %>
             <% end %>
 
-            <%# Hidden checkboxes for custom fields ────────────────────── %>
+            <%# Hidden checkboxes for ALL custom fields for this tracker %>
             <% all_cfs.each do |cf| %>
               <%= check_box_tag "settings[tracker_popup_fields][#{tid}][]",
                     cf.id.to_s,
@@ -310,12 +327,20 @@
                     data:  { tid: tid, fid: "cf_#{cf.id}", name: cf.name, required: cf.is_required ? '1' : '0', ftype: 'cf' } %>
             <% end %>
 
-            <%# Selected fields chip list ───────────────────────────────── %>
-            <div style="margin-bottom:6px;font-size:12px;color:#555;font-weight:bold;">Fields shown in popup:</div>
+            <%# Action buttons %>
+            <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;">
+              <span style="font-size:12px;color:#555;font-weight:bold;">Fields shown in popup:</span>
+              <button type="button" class="pcu-add-btn" style="padding:4px 10px;font-size:12px;background:#1976D2;"
+                      onclick="pcuSelectAll(<%= tid %>)">Select All</button>
+              <button type="button" class="pcu-add-btn" style="padding:4px 10px;font-size:12px;background:#9e9e9e;"
+                      onclick="pcuClearAll(<%= tid %>)">Clear All</button>
+            </div>
+
+            <%# Selected fields chip list — in Redmine form order %>
             <div class="pcu-chips" id="pcu-chips-<%= tid %>">
               <% if total_sel == 0 %>
                 <span class="pcu-chips-empty" id="pcu-empty-<%= tid %>">
-                  No fields added yet — use the dropdown below to add fields.
+                  No fields selected — use the dropdown below or click Select All.
                 </span>
               <% end %>
               <% sel_std.each do |sf| %>
@@ -340,8 +365,8 @@
               <% end %>
             </div>
 
-            <%# Add-field row ───────────────────────────────────────────── %>
-            <div class="pcu-add-row">
+            <%# Add-field dropdown — shows only fields not yet selected %>
+            <div class="pcu-add-row" style="margin-top:10px;">
               <select id="pcu-sel-<%= tid %>">
                 <option value="">— select a field to add —</option>
                 <% if avail_std.any? %>
@@ -372,7 +397,8 @@
               <button type="button" class="pcu-add-btn" onclick="pcuAdd(<%= tid %>)">+ Add</button>
             </div>
             <p class="pcu-hint" style="margin-top:6px;">
-              Any new standard or custom fields added to Redmine will automatically appear here.
+              Field names and order match the Redmine issue form for this tracker.
+              New custom fields added to this tracker appear here automatically.
             </p>
 
           </div><%# /pcu-tracker-bd %>
@@ -513,6 +539,42 @@ function pcuUpdateCount(tid) {
   var n = chips.length;
   badge.textContent = n;
   badge.nextElementSibling.textContent = ' field' + (n === 1 ? '' : 's') + ' in popup';
+}
+
+/* ── Select All fields for a tracker ───────────────────────────────────── */
+function pcuSelectAll(tid) {
+  var sel = document.getElementById('pcu-sel-' + tid);
+  if (!sel) return;
+  /* iterate optgroups and options, add each available field */
+  var toAdd = [];
+  for (var g = 0; g < sel.children.length; g++) {
+    var child = sel.children[g];
+    if (child.tagName === 'OPTGROUP') {
+      for (var i = 0; i < child.children.length; i++) {
+        toAdd.push(child.children[i].value);
+      }
+    } else if (child.tagName === 'OPTION' && child.value) {
+      toAdd.push(child.value);
+    }
+  }
+  /* set selection then call pcuAdd for each */
+  toAdd.forEach(function(fid) {
+    sel.value = fid;
+    pcuAdd(tid);
+  });
+}
+
+/* ── Clear All fields for a tracker ────────────────────────────────────── */
+function pcuClearAll(tid) {
+  var chips = document.querySelectorAll('#pcu-chips-' + tid + ' .pcu-chip');
+  var fids = [];
+  chips.forEach(function(chip) {
+    /* chip id = "pcu-chip-<tid>-<fid>" */
+    var id = chip.id || '';
+    var prefix = 'pcu-chip-' + tid + '-';
+    if (id.indexOf(prefix) === 0) fids.push(id.slice(prefix.length));
+  });
+  fids.forEach(function(fid) { pcuRemove(tid, fid); });
 }
 
 /* ── HTML-escape helper ─────────────────────────────────────────────────── */
