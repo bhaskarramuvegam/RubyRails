@@ -33,83 +33,105 @@ module RedmineParentToChildUpdate
       tracker = Tracker.find_by(id: tracker_id)
       return render json: { fields: [] } unless tracker
 
-      plugin_settings  = Setting.plugin_redmine_parent_to_child_update || {}
-      popup_fields_cfg = plugin_settings['tracker_popup_fields'] || {}
-      configured_ids   = Array(popup_fields_cfg[tracker_id.to_s]).map(&:to_s).uniq
+      begin
+        plugin_settings  = Setting.plugin_redmine_parent_to_child_update || {}
+        popup_fields_cfg = plugin_settings['tracker_popup_fields'] || {}
+        configured_ids   = Array(popup_fields_cfg[tracker_id.to_s]).map(&:to_s).uniq
 
-      # Split into standard (prefix "std_") and custom (numeric strings / "cf_<n>")
-      std_keys = configured_ids.select { |v| v.start_with?('std_') }.map { |v| v.sub('std_', '') }
-      cf_ids   = configured_ids.map { |v| v.sub(/\Acf_/, '').to_i }.select { |v| v > 0 }.uniq
-
-      # ── Standard fields ────────────────────────────────────────────────────
-      std_fields = std_keys.filter_map do |key|
-        defn = STANDARD_POPUP_FIELDS[key]
-        next unless defn
-
-        opts = {
-          id:              "std_#{key}",
-          std_key:         key,
-          name:            defn[:name].respond_to?(:call) ? defn[:name].call : defn[:name],
-          field_format:    defn[:format],
-          possible_values: [],
-          default_value:   '',
-          value:           '',
-          is_required:     false,
-          is_standard:     true
-        }
-
-        case key
-        when 'status_id'
-          opts[:possible_values] = IssueStatus.sorted.map { |s| { value: s.id.to_s, label: s.name } }
-          default_status = IssueStatus.default || IssueStatus.first
-          opts[:value] = default_status&.id.to_s
-        when 'estimated_hours'
-          opts[:value] = @issue.estimated_hours.to_s
-        when 'start_date'
-          opts[:value] = @issue.start_date&.to_s || ''
-        when 'due_date'
-          opts[:value] = @issue.due_date&.to_s || ''
-        when 'done_ratio'
-          opts[:value] = @issue.done_ratio.to_s
-        when 'description'
-          opts[:value] = @issue.description.to_s
-        when 'assigned_to_id'
-          opts[:possible_values] = @issue.project.members.includes(:user)
-            .map { |m| { value: m.user_id.to_s, label: m.user.name } }
-          opts[:value] = @issue.assigned_to_id.to_s
-        when 'priority_id'
-          opts[:possible_values] = IssuePriority.active
-            .map { |p| { value: p.id.to_s, label: p.name } }
-          opts[:value] = @issue.priority_id.to_s
-        when 'category_id'
-          opts[:possible_values] = @issue.project.issue_categories
-            .map { |c| { value: c.id.to_s, label: c.name } }
-          opts[:value] = @issue.category_id.to_s
-        when 'fixed_version_id'
-          opts[:possible_values] = @issue.project.shared_versions.open
-            .map { |v| { value: v.id.to_s, label: v.name } }
-          opts[:value] = @issue.fixed_version_id.to_s
+        if configured_ids.empty?
+          # Never configured → default to ALL fields for this tracker
+          tracker_core = tracker.respond_to?(:core_fields) ? Array(tracker.core_fields).map(&:to_s) : []
+          always_std   = %w[status_id description priority_id]
+          std_keys     = STANDARD_POPUP_FIELDS.keys.select { |k| always_std.include?(k) || tracker_core.include?(k) }
+          cf_ids       = tracker.custom_fields.map(&:id)
+        else
+          std_keys = configured_ids.select { |v| v.start_with?('std_') }.map { |v| v.sub('std_', '') }
+          cf_ids   = configured_ids.map { |v| v.sub(/\Acf_/, '').to_i }.select { |v| v > 0 }.uniq
         end
 
-        opts
-      end
+        # ── Standard fields ──────────────────────────────────────────────────
+        std_fields = std_keys.filter_map do |key|
+          defn = STANDARD_POPUP_FIELDS[key]
+          next unless defn
 
-      # ── Custom fields ──────────────────────────────────────────────────────
-      configured_cfs = tracker.custom_fields.select { |cf| cf_ids.include?(cf.id) }
-      cf_fields = configured_cfs.map do |cf|
-        {
-          id:              cf.id,
-          name:            cf.name,
-          field_format:    cf.field_format,
-          possible_values: cf.field_format == 'list' ? cf.possible_values : [],
-          default_value:   cf.default_value.to_s,
-          value:           @issue.custom_field_value(cf.id).to_s,
-          is_required:     cf.is_required,
-          is_standard:     false
-        }
-      end
+          opts = {
+            id:              "std_#{key}",
+            std_key:         key,
+            name:            defn[:name].respond_to?(:call) ? defn[:name].call : defn[:name],
+            field_format:    defn[:format],
+            possible_values: [],
+            default_value:   '',
+            value:           '',
+            is_required:     false,
+            is_standard:     true
+          }
 
-      render json: { fields: std_fields + cf_fields }
+          case key
+          when 'status_id'
+            statuses = begin
+              IssueStatus.respond_to?(:sorted) ? IssueStatus.sorted : IssueStatus.order(:position)
+            rescue
+              IssueStatus.all
+            end
+            opts[:possible_values] = statuses.map { |s| { value: s.id.to_s, label: s.name } }
+            default_status = begin
+              IssueStatus.find_by(is_default: true)
+            rescue
+              nil
+            end || IssueStatus.first
+            opts[:value] = default_status&.id.to_s || ''
+          when 'estimated_hours'
+            opts[:value] = @issue.estimated_hours.to_s
+          when 'start_date'
+            opts[:value] = @issue.start_date&.to_s || ''
+          when 'due_date'
+            opts[:value] = @issue.due_date&.to_s || ''
+          when 'done_ratio'
+            opts[:value] = @issue.done_ratio.to_s
+          when 'description'
+            opts[:value] = @issue.description.to_s
+          when 'assigned_to_id'
+            opts[:possible_values] = @issue.project.members.includes(:user)
+              .map { |m| { value: m.user_id.to_s, label: m.user.name } }
+            opts[:value] = @issue.assigned_to_id.to_s
+          when 'priority_id'
+            opts[:possible_values] = IssuePriority.active
+              .map { |p| { value: p.id.to_s, label: p.name } }
+            opts[:value] = @issue.priority_id.to_s
+          when 'category_id'
+            opts[:possible_values] = @issue.project.issue_categories
+              .map { |c| { value: c.id.to_s, label: c.name } }
+            opts[:value] = @issue.category_id.to_s
+          when 'fixed_version_id'
+            opts[:possible_values] = @issue.project.shared_versions.open
+              .map { |v| { value: v.id.to_s, label: v.name } }
+            opts[:value] = @issue.fixed_version_id.to_s
+          end
+
+          opts
+        end
+
+        # ── Custom fields ────────────────────────────────────────────────────
+        all_tracker_cfs = tracker.custom_fields.to_a
+        configured_cfs  = all_tracker_cfs.select { |cf| cf_ids.include?(cf.id) }
+        cf_fields = configured_cfs.map do |cf|
+          {
+            id:              cf.id,
+            name:            cf.name,
+            field_format:    cf.field_format,
+            possible_values: cf.field_format == 'list' ? cf.possible_values : [],
+            default_value:   cf.default_value.to_s,
+            value:           @issue.custom_field_value(cf.id).to_s,
+            is_required:     cf.is_required,
+            is_standard:     false
+          }
+        end
+
+        render json: { fields: std_fields + cf_fields }
+      rescue => e
+        Rails.logger.error("PCU get_required_fields error: #{e.class}: #{e.message}\n#{e.backtrace.first(5).join("\n")}")
+        render json: { error: "Failed to load fields: #{e.message}", fields: [] }, status: :internal_server_error
+      end
     end
 
     # Get available trackers for child creation

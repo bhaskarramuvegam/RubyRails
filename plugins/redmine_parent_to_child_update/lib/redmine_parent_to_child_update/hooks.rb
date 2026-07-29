@@ -196,8 +196,12 @@ module RedmineParentToChildUpdate
       output << "  fetch('/redmine_parent_to_child_update/child_issues/required_fields/'+parentId+'?tracker_id='+tid,{"
       output << "    headers:{'X-Requested-With':'XMLHttpRequest','Accept':'application/json'},"
       output << "    credentials:'same-origin'"
-      output << "  }).then(function(r){return r.json();})"
+      output << "  }).then(function(r){"
+      output << "    if(!r.ok) return r.json().then(function(j){throw new Error(j.error||('HTTP '+r.status));});"
+      output << "    return r.json();"
+      output << "  })"
       output << "  .then(function(json){"
+      output << "    if(json.error){ pcuShowStatus('Could not load fields: '+json.error,'#fdecea','#c62828'); return; }"
       output << "    if(!json.fields||json.fields.length===0) return;"
       output << "    var hd=document.createElement('p');"
       output << "    hd.style.cssText='font-weight:bold;margin:14px 0 6px;color:#333;font-size:13px;border-top:1px solid #eee;padding-top:12px;';"
@@ -259,7 +263,7 @@ module RedmineParentToChildUpdate
       output << "      inp.dataset.required=cf.is_required?'1':'0';"
       output << "      inp.className='pcu-req-cf'; w.appendChild(inp); box.appendChild(w);"
       output << "    });"
-      output << "  }).catch(function(){});"
+      output << "  }).catch(function(err){ pcuShowStatus('Field load failed: '+err.message,'#fdecea','#c62828'); });"
       output << "}"
 
       # Create child via AJAX
