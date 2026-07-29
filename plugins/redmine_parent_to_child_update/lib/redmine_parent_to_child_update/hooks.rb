@@ -108,10 +108,16 @@ module RedmineParentToChildUpdate
       output << "  width:100%;height:100%;background:rgba(0,0,0,0.55);"
       output << "  font-family:Arial,sans-serif;overflow-y:auto;}"
       output << "#pcu-child-modal .pcu-modal-box{"
-      output << "  background:#fff;margin:2% auto;padding:32px 36px;"
-      output << "  border-radius:5px;width:840px;max-width:95%;"
+      output << "  background:#fff;margin:2% auto;padding:0;"
+      output << "  border-radius:6px;width:840px;max-width:95%;"
       output << "  box-shadow:0 6px 24px rgba(0,0,0,0.25);max-height:92vh;overflow-y:auto;}"
-      output << "#pcu-child-modal h3{margin:0 0 8px;color:#333;font-size:20px;}"
+      output << ".pcu-modal-header{"
+      output << "  display:flex;align-items:center;justify-content:space-between;"
+      output << "  padding:20px 28px 16px;border-bottom:1px solid #eee;}"
+      output << ".pcu-modal-header h3{margin:0;color:#333;font-size:20px;}"
+      output << ".pcu-modal-close-x{background:none;border:none;font-size:22px;cursor:pointer;"
+      output << "  color:#888;line-height:1;padding:0 2px;} .pcu-modal-close-x:hover{color:#333;}"
+      output << ".pcu-modal-body{padding:20px 28px;}"
       output << "#pcu-child-modal .pcu-desc{color:#666;font-size:16px;margin-bottom:20px;}"
       output << "#pcu-child-modal label{font-weight:bold;font-size:16px;display:block;margin-bottom:6px;}"
       output << "#pcu-child-modal select,#pcu-child-modal input[type=text],#pcu-child-modal input[type=number],#pcu-child-modal input[type=date]{"
@@ -125,10 +131,13 @@ module RedmineParentToChildUpdate
       output << "  border:1px solid #ccc;border-radius:4px;height:46px;}"
       output << ".child-req-field textarea{height:90px;resize:vertical;}"
       output << "#pcu-status-msg{display:none;margin:12px 0;padding:10px;border-radius:3px;font-size:16px;}"
-      output << ".pcu-modal-btns{text-align:center;margin-top:24px;}"
-      output << ".pcu-modal-btns button{padding:11px 28px;margin:0 8px;font-size:17px;border-radius:3px;cursor:pointer;border:none;}"
-      output << ".pcu-btn-yes{background:#4CAF50;color:#fff;} .pcu-btn-yes:hover{background:#43a047;}"
-      output << ".pcu-btn-no{background:#f44336;color:#fff;} .pcu-btn-no:hover{background:#e53935;}"
+      output << ".pcu-modal-footer{padding:16px 28px;border-top:1px solid #eee;"
+      output << "  display:flex;gap:10px;flex-wrap:wrap;align-items:center;}"
+      output << ".pcu-btn{padding:11px 22px;font-size:15px;border-radius:4px;cursor:pointer;border:none;font-weight:bold;}"
+      output << ".pcu-btn-save{background:#4CAF50;color:#fff;} .pcu-btn-save:hover{background:#43a047;}"
+      output << ".pcu-btn-save-child{background:#1976D2;color:#fff;} .pcu-btn-save-child:hover{background:#1565C0;}"
+      output << ".pcu-btn-clear{background:#ff9800;color:#fff;} .pcu-btn-clear:hover{background:#fb8c00;}"
+      output << ".pcu-btn-close{background:#9e9e9e;color:#fff;} .pcu-btn-close:hover{background:#757575;}"
       output << ".pcu-subtask-btn{display:inline-flex;align-items:center;gap:2px;"
       output << "  background:none;color:#1976D2 !important;border:none;border-radius:0;"
       output << "  padding:0;font-size:0.9em;cursor:pointer;text-decoration:none !important;"
@@ -136,15 +145,31 @@ module RedmineParentToChildUpdate
       output << ".pcu-subtask-btn:hover{color:#0d47a1 !important;text-decoration:underline !important;}"
       output << "</style>"
 
+      # Trackers that have children configured → show "Save & Create Child Tracker" button
+      trackers_with_children = (Setting.plugin_redmine_parent_to_child_update['popup_child_trackers_by_parent'] || {})
+                                 .select { |_, v| v.to_s.strip.present? }.keys.map(&:to_s)
+      # Build a JS-safe map of tracker_id => has_children (bool)
+      tracker_has_children_js = trackers.map { |t|
+        "\"#{t.id}\":#{trackers_with_children.include?(t.id.to_s)}"
+      }.join(',')
+
       # ── Modal HTML (always rendered, hidden by default) ────────────────────
       output << "<div id='pcu-child-modal'>"
       output << "  <div class='pcu-modal-box'>"
+
+      # Header with X close button
+      output << "  <div class='pcu-modal-header'>"
       output << "    <h3>Create Child Tracker</h3>"
+      output << "    <button type='button' class='pcu-modal-close-x' onclick='pcuCloseModal()' title='Close'>&#10005;</button>"
+      output << "  </div>"
+
+      # Body
+      output << "  <div class='pcu-modal-body'>"
       output << "    <p class='pcu-desc'>Create a child tracker under <strong>##{issue.id} &ndash; #{safe_subject}</strong>.</p>"
 
       output << "    <div class='pcu-field-block'>"
       output << "      <label for='pcu-tracker-select'>Child tracker type <span style='color:red'>*</span></label>"
-      output << "      <select id='pcu-tracker-select' onchange='pcuLoadRequiredFields(#{issue.id})'>"
+      output << "      <select id='pcu-tracker-select' onchange='pcuOnTrackerChange(#{issue.id})'>"
       trackers.each_with_index do |t, i|
         output << "        <option value='#{t.id}'#{i == 0 ? ' selected' : ''}>#{ERB::Util.html_escape(t.name)}</option>"
       end
@@ -153,22 +178,31 @@ module RedmineParentToChildUpdate
 
       output << "    <div class='pcu-field-block'>"
       output << "      <label for='pcu-subject'>Tracker subject <span style='color:red'>*</span></label>"
-      output << "      <input type='text' id='pcu-subject' value='#{safe_subject}' placeholder='Enter child issue subject'>"
+      output << "      <input type='text' id='pcu-subject' value='#{safe_subject}' placeholder='Enter tracker subject'>"
       output << "    </div>"
 
       output << "    <div id='pcu-required-fields'></div>"
       output << "    <div id='pcu-status-msg'></div>"
+      output << "  </div>"
 
-      output << "    <div class='pcu-modal-btns'>"
-      output << "      <button type='button' class='pcu-btn-yes' id='pcu-submit-btn'"
-      output << "              onclick='pcuCreateChild(#{issue.id})'>Yes, Create Tracker</button>"
-      output << "      <button type='button' class='pcu-btn-no' onclick='pcuCloseModal()'>No</button>"
-      output << "    </div>"
+      # Footer buttons
+      output << "  <div class='pcu-modal-footer'>"
+      output << "    <button type='button' class='pcu-btn pcu-btn-save' id='pcu-btn-save'"
+      output << "            onclick='pcuSubmit(#{issue.id},false)'>Save Tracker</button>"
+      output << "    <button type='button' class='pcu-btn pcu-btn-save-child' id='pcu-btn-save-child'"
+      output << "            onclick='pcuSubmit(#{issue.id},true)' style='display:none'>Save &amp; Create Child Tracker</button>"
+      output << "    <button type='button' class='pcu-btn pcu-btn-clear'"
+      output << "            onclick='pcuClearFields()'>Clear</button>"
+      output << "    <button type='button' class='pcu-btn pcu-btn-close'"
+      output << "            onclick='pcuCloseModal()'>Close</button>"
+      output << "  </div>"
       output << "  </div>"
       output << "</div>"
 
       # ── JavaScript ────────────────────────────────────────────────────────
       output << "<script type='text/javascript'>"
+
+      output << "var pcuTrackerHasChildren={#{tracker_has_children_js}};"
 
       output << "function pcuCsrfToken(){"
       output << "  var m=document.querySelector('meta[name=csrf-token]');"
@@ -183,8 +217,28 @@ module RedmineParentToChildUpdate
       output << "  document.getElementById('pcu-required-fields').innerHTML='';"
       output << "  var msg=document.getElementById('pcu-status-msg');"
       output << "  if(msg){msg.style.display='none';msg.textContent='';}"
-      output << "  var btn=document.getElementById('pcu-submit-btn');"
-      output << "  if(btn){btn.disabled=false;btn.textContent='Yes, Create Tracker';}"
+      output << "  document.getElementById('pcu-btn-save').disabled=false;"
+      output << "  var sc=document.getElementById('pcu-btn-save-child');"
+      output << "  if(sc) sc.disabled=false;"
+      output << "}"
+
+      # Clear all editable fields in the popup (reset to blank / first option)
+      output << "function pcuClearFields(){"
+      output << "  document.getElementById('pcu-subject').value='';"
+      output << "  document.querySelectorAll('#pcu-required-fields .pcu-req-cf').forEach(function(inp){"
+      output << "    if(inp.tagName==='SELECT') inp.selectedIndex=0;"
+      output << "    else inp.value='';"
+      output << "  });"
+      output << "  var msg=document.getElementById('pcu-status-msg');"
+      output << "  if(msg){msg.style.display='none';msg.textContent='';}"
+      output << "}"
+
+      # Update Save & Create Child button visibility when tracker changes
+      output << "function pcuOnTrackerChange(parentId){"
+      output << "  pcuLoadRequiredFields(parentId);"
+      output << "  var tid=document.getElementById('pcu-tracker-select').value;"
+      output << "  var sc=document.getElementById('pcu-btn-save-child');"
+      output << "  if(sc) sc.style.display=(pcuTrackerHasChildren[tid]?'':'none');"
       output << "}"
 
       # Load admin-configured popup fields for selected tracker
@@ -266,13 +320,13 @@ module RedmineParentToChildUpdate
       output << "  }).catch(function(err){ pcuShowStatus('Field load failed: '+err.message,'#fdecea','#c62828'); });"
       output << "}"
 
-      # Create child via AJAX
-      output << "function pcuCreateChild(parentId){"
+      # Submit: withChain=true → Save & Create Child Tracker; false → Save Tracker only
+      output << "function pcuSubmit(parentId,withChain){"
       output << "  var tracker=document.getElementById('pcu-tracker-select').value;"
       output << "  var subject=document.getElementById('pcu-subject').value.trim();"
-      output << "  if(!tracker){alert('Please select a child issue type.');return;}"
-      output << "  if(!subject){alert('Please enter a subject for the child issue.');return;}"
-      output << "  var cfInputs=document.querySelectorAll('.pcu-req-cf');"
+      output << "  if(!tracker){alert('Please select a child tracker type.');return;}"
+      output << "  if(!subject){alert('Please enter a tracker subject.');return;}"
+      output << "  var cfInputs=document.querySelectorAll('#pcu-required-fields .pcu-req-cf');"
       output << "  for(var i=0;i<cfInputs.length;i++){"
       output << "    if(cfInputs[i].dataset.required!=='1') continue;"
       output << "    if(!cfInputs[i].value||cfInputs[i].value.trim()===''){"
@@ -283,10 +337,14 @@ module RedmineParentToChildUpdate
       output << "  }"
       output << "  var token=pcuCsrfToken();"
       output << "  if(!token){alert('CSRF token not found. Please reload.');return;}"
-      output << "  var btn=document.getElementById('pcu-submit-btn');"
-      output << "  btn.disabled=true; btn.textContent='Creating...';"
+      output << "  var saveBtn=document.getElementById('pcu-btn-save');"
+      output << "  var saveChildBtn=document.getElementById('pcu-btn-save-child');"
+      output << "  saveBtn.disabled=true;"
+      output << "  if(saveChildBtn) saveChildBtn.disabled=true;"
       output << "  var data=new FormData();"
-      output << "  data.append('tracker_id',tracker); data.append('subject',subject);"
+      output << "  data.append('tracker_id',tracker);"
+      output << "  data.append('subject',subject);"
+      output << "  data.append('skip_chain',withChain?'0':'1');"
       output << "  cfInputs.forEach(function(inp){"
       output << "    if(inp.dataset.stdKey&&inp.value){"
       output << "      data.append('std_fields['+inp.dataset.stdKey+']',inp.value);"
@@ -297,7 +355,7 @@ module RedmineParentToChildUpdate
       output << "  fetch('/redmine_parent_to_child_update/child_issues/create/'+parentId,{"
       output << "    method:'POST',"
       output << "    headers:{'X-CSRF-Token':token,'X-Requested-With':'XMLHttpRequest','Accept':'application/json'},"
-      output << "    body:data, credentials:'same-origin'"
+      output << "    body:data,credentials:'same-origin'"
       output << "  }).then(function(r){"
       output << "    return r.text().then(function(t){"
       output << "      if(!r.ok){try{var j=JSON.parse(t);throw new Error(j.error||t);}catch(e){throw new Error(t);}}"
@@ -306,28 +364,19 @@ module RedmineParentToChildUpdate
       output << "  }).then(function(json){"
       output << "    if(json.error){"
       output << "      pcuShowStatus(json.error,'#fdecea','#c62828');"
-      output << "      btn.disabled=false; btn.textContent='Yes, Create Tracker';"
-      # Chain: redirect to newly created child's page (popup will auto-open there)
+      output << "      saveBtn.disabled=false;"
+      output << "      if(saveChildBtn) saveChildBtn.disabled=false;"
       output << "    } else if(json.redirect_to){"
-      output << "      pcuShowStatus('Child created! Loading next step...','#e8f5e9','#2e7d32');"
+      output << "      pcuShowStatus('Tracker created! Loading child creation...','#e8f5e9','#2e7d32');"
       output << "      setTimeout(function(){window.location.href=json.redirect_to;},900);"
-      # Loop: stay on same page, re-open popup so user can create another sibling
-      output << "    } else if(json.loop){"
-      output << "      pcuShowStatus('Child created! Create another child or click No when done.','#e8f5e9','#2e7d32');"
-      output << "      setTimeout(function(){"
-      output << "        document.getElementById('pcu-required-fields').innerHTML='';"
-      output << "        document.getElementById('pcu-status-msg').style.display='none';"
-      output << "        document.getElementById('pcu-subject').value=#{safe_subject.inspect};"
-      output << "        btn.disabled=false; btn.textContent='Yes, Create Tracker';"
-      output << "        pcuLoadRequiredFields(parentId);"
-      output << "      },1200);"
       output << "    } else {"
-      output << "      pcuShowStatus('Child created!','#e8f5e9','#2e7d32');"
+      output << "      pcuShowStatus('Tracker created successfully!','#e8f5e9','#2e7d32');"
       output << "      setTimeout(function(){window.location.reload();},1200);"
       output << "    }"
       output << "  }).catch(function(err){"
       output << "    pcuShowStatus(err.message,'#fdecea','#c62828');"
-      output << "    btn.disabled=false; btn.textContent='Yes, Create Tracker';"
+      output << "    saveBtn.disabled=false;"
+      output << "    if(saveChildBtn) saveChildBtn.disabled=false;"
       output << "  });"
       output << "}"
 
@@ -396,7 +445,7 @@ module RedmineParentToChildUpdate
       output << "  if(modal&&modal.parentNode!==document.body) document.body.appendChild(modal);"
       if auto_open
         output << "  modal.style.display='block';"
-        output << "  pcuLoadRequiredFields(#{issue.id});"
+        output << "  pcuOnTrackerChange(#{issue.id});"
       end
       output << "  pcuInjectSubtaskButton(#{issue.id});"
       output << "});"

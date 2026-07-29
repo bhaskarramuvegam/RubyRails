@@ -236,24 +236,27 @@ module RedmineParentToChildUpdate
         end
 
         # ── Chain popup logic ──────────────────────────────────────────────────
-        # Check if the newly created child's tracker has child types configured.
-        # If yes → redirect to the child's page with popup auto-open (chain continues).
-        # If no  → stay on current page and re-open popup (loop for more siblings).
-        trackers_map = Setting.plugin_redmine_parent_to_child_update['popup_child_trackers_by_parent'] || {}
+        # skip_chain=1 → "Save Tracker" button: always reload, no chain
+        # skip_chain=0 → "Save & Create Child Tracker" button: chain if configured
+        skip_chain = params[:skip_chain].to_s == '1'
+
+        trackers_map         = Setting.plugin_redmine_parent_to_child_update['popup_child_trackers_by_parent'] || {}
         child_tracker_filter = trackers_map[primary_child.tracker_id.to_s].to_s.strip
 
-        if child_tracker_filter.present?
-          # Child has grandchild types configured → set session and redirect to child
+        raw_parent_trackers       = Setting.plugin_redmine_parent_to_child_update['popup_parent_trackers'].to_s
+        popup_parent_names        = raw_parent_trackers.split(',').map(&:strip).reject(&:empty?)
+        popup_parent_names        = ['Change Request', 'CR'] if popup_parent_names.empty?
+        current_parent_is_chain   = popup_parent_names.any? { |n| n.casecmp?(@issue.tracker.name) }
+
+        if !skip_chain && child_tracker_filter.present? && current_parent_is_chain
           session[:redmine_parent_to_child_show_prompt_for] = primary_child.id
           render json: {
             children:    created_children.map { |c| { id: c.id, subject: c.subject, url: issue_path(c) } },
             redirect_to: issue_path(primary_child)
           }, status: :created
         else
-          # No further chain → loop: stay on same page, re-open popup for next sibling
           render json: {
-            children: created_children.map { |c| { id: c.id, subject: c.subject, url: issue_path(c) } },
-            loop:     true
+            children: created_children.map { |c| { id: c.id, subject: c.subject, url: issue_path(c) } }
           }, status: :created
         end
       rescue => e
