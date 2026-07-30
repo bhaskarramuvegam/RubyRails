@@ -1,0 +1,203 @@
+<%- @settings ||= {} %>
+
+<style>
+.tfc-box          { border:1px solid #ddd; border-radius:4px; margin-bottom:20px; }
+.tfc-box-head     { padding:9px 14px; background:#f5f5f5; border-bottom:1px solid #ddd;
+                    font-weight:bold; font-size:13px; color:#333; }
+.tfc-box-body     { padding:14px 16px; }
+.tfc-setting      { margin-bottom:14px; }
+.tfc-setting:last-child { margin-bottom:0; }
+.tfc-setting label      { font-weight:bold; display:block; margin-bottom:4px; font-size:13px; }
+.tfc-setting label.inline { display:inline; font-weight:normal; }
+.tfc-hint         { color:#777; font-size:12px; margin-top:3px; }
+
+.tfc-project-select { padding:6px 8px; font-size:13px; min-width:280px; margin-bottom:16px; }
+
+.tfc-project-panel  { display:none; }
+.tfc-project-panel.tfc-active { display:block; }
+.tfc-no-projects    { color:#aaa; font-size:13px; font-style:italic; }
+.tfc-no-trackers    { color:#aaa; font-size:13px; font-style:italic; }
+
+.tfc-tracker      { border:1px solid #ddd; border-radius:4px; margin-bottom:10px; }
+.tfc-tracker-hd   { padding:9px 14px; background:#fafafa; cursor:pointer;
+                    display:flex; justify-content:space-between; align-items:center;
+                    font-size:13px; font-weight:bold; user-select:none; }
+.tfc-tracker-hd:hover { background:#eef5fb; }
+.tfc-tracker-bd   { padding:14px 16px; display:none; border-top:1px solid #eee; }
+.tfc-tracker-bd.tfc-open { display:block; }
+.tfc-arrow        { font-size:11px; color:#888; }
+.tfc-count-badge  { font-size:11px; background:#4c96c4; color:#fff; border-radius:10px;
+                    padding:1px 7px; margin-left:6px; font-weight:normal; }
+
+.tfc-field-table  { width:100%; border-collapse:collapse; font-size:13px; }
+.tfc-field-table th { text-align:left; padding:7px 10px; border:1px solid #ddd; background:#f5f5f5; color:#444; }
+.tfc-field-table td { padding:6px 10px; border:1px solid #eee; vertical-align:middle; }
+.tfc-field-table select { width:100%; max-width:260px; padding:5px 7px; font-size:13px;
+                          border:1px solid #ccc; border-radius:3px; }
+.tfc-loading      { color:#888; font-size:13px; font-style:italic; padding:10px 0; }
+.tfc-load-error   { color:#c62828; font-size:13px; padding:10px 0; }
+</style>
+
+<%# ═══════════════════════════════════════════════════════════════════════════
+    SECTION 1 - General
+    ═══════════════════════════════════════════════════════════════════════════ %>
+<div class="tfc-box">
+  <div class="tfc-box-head">General</div>
+  <div class="tfc-box-body">
+    <div class="tfc-setting">
+      <label class="inline">
+        <%= check_box_tag 'settings[enabled]', '1', @settings['enabled'] != '0' %>
+        Enable Tracker Fields Configuration plugin
+      </label>
+      <p class="tfc-hint">
+        When disabled, all custom fields render in their normal position and no fields are moved.
+      </p>
+    </div>
+  </div>
+</div>
+
+<%# ═══════════════════════════════════════════════════════════════════════════
+    SECTION 2 - Per-project field promotion
+    Only the project list is loaded up front (cheap - id/name only). Each
+    project's tracker/custom-field table is fetched on demand when picked
+    from the dropdown, and then cached in the DOM so switching back to an
+    already-visited project doesn't re-fetch or lose edits. This avoids
+    rendering every project's full matrix at once, which is too large a
+    page for the browser on instances with many custom fields per tracker.
+    ═══════════════════════════════════════════════════════════════════════════ %>
+<%
+  tfc_projects = Project.active.sorted.pluck(:id, :name)
+%>
+<div class="tfc-box">
+  <div class="tfc-box-head">Move Custom Fields to Standard Fields Area</div>
+  <div class="tfc-box-body">
+    <p style="margin:0 0 14px;color:#555;font-size:13px;">
+      Pick a project below, then for each of its trackers choose which custom fields should be
+      promoted into the standard fields area of the issue form, and which standard field each one
+      should appear directly after. The lists of projects, trackers and custom fields are always
+      read live from this Redmine instance.
+    </p>
+
+    <% if tfc_projects.empty? %>
+      <p class="tfc-no-projects">No active projects found in this Redmine instance.</p>
+    <% else %>
+      <label for="tfc-project-select" style="display:block;font-weight:bold;font-size:13px;margin-bottom:4px;">
+        Project
+      </label>
+      <select id="tfc-project-select" class="tfc-project-select" onchange="tfcShowProject(this.value)">
+        <% tfc_projects.each do |pid, pname| %>
+          <option value="<%= pid %>"><%= pname %></option>
+        <% end %>
+      </select>
+
+      <div id="tfc-projects-container"></div>
+
+      <%# ═════════════════════════════════════════════════════════════════════
+          Preserve the currently-saved selections for every project as hidden
+          fields. The settings form always resubmits the *entire* nested
+          config in one go, so without this, saving while a project's panel
+          was never opened in this browser session would silently wipe that
+          project's configuration. Once a project is loaded into a live,
+          editable panel, its hidden fields here are removed by JS so the
+          live inputs are the only ones submitted for it.
+          ═════════════════════════════════════════════════════════════════════ %>
+      <%
+        raw_fields_cfg = TrackerFieldsConfiguration.hash_at('project_tracker_fields')
+        raw_after_cfg  = TrackerFieldsConfiguration.hash_at('project_tracker_after')
+      %>
+      <div id="tfc-preserved-fields" style="display:none;">
+        <% raw_fields_cfg.each do |ppid, trackers| %>
+          <% next unless trackers.is_a?(Hash) %>
+          <% trackers.each do |ttid, cf_ids| %>
+            <% Array(cf_ids).each do |cf_id| %>
+              <input type="hidden" class="tfc-preserve tfc-preserve-<%= ppid %>"
+                     name="settings[project_tracker_fields][<%= ppid %>][<%= ttid %>][]"
+                     value="<%= cf_id %>">
+            <% end %>
+          <% end %>
+        <% end %>
+        <% raw_after_cfg.each do |ppid, trackers| %>
+          <% next unless trackers.is_a?(Hash) %>
+          <% trackers.each do |ttid, cf_map| %>
+            <% next unless cf_map.is_a?(Hash) %>
+            <% cf_map.each do |cf_id, after_key| %>
+              <input type="hidden" class="tfc-preserve tfc-preserve-<%= ppid %>"
+                     name="settings[project_tracker_after][<%= ppid %>][<%= ttid %>][<%= cf_id %>]"
+                     value="<%= after_key %>">
+            <% end %>
+          <% end %>
+        <% end %>
+      </div>
+    <% end %>
+  </div>
+</div>
+
+<script>
+var TFC_FIELDS_URL = "<%= j tracker_fields_configuration_project_fields_path %>";
+</script>
+
+<script>
+function tfcShowProject(pid) {
+  document.querySelectorAll('.tfc-project-panel').forEach(function(panel) {
+    panel.classList.remove('tfc-active');
+  });
+
+  var existing = document.getElementById('tfc-project-' + pid);
+  if (existing) {
+    existing.classList.add('tfc-active');
+    return;
+  }
+
+  var container = document.getElementById('tfc-projects-container');
+  if (!container) return;
+
+  var panel = document.createElement('div');
+  panel.className = 'tfc-project-panel tfc-active';
+  panel.id = 'tfc-project-' + pid;
+  panel.innerHTML = '<p class="tfc-loading">Loading fields&hellip;</p>';
+  container.appendChild(panel);
+
+  fetch(TFC_FIELDS_URL + '?id=' + encodeURIComponent(pid), {
+    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    credentials: 'same-origin'
+  }).then(function(response) {
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    return response.text();
+  }).then(function(html) {
+    panel.innerHTML = html;
+    // This project now has live, editable inputs in the form - drop the
+    // hidden "preserve as-is" fields for it so we don't submit both.
+    document.querySelectorAll('.tfc-preserve-' + pid).forEach(function(el) { el.remove(); });
+  }).catch(function(err) {
+    panel.innerHTML = '<p class="tfc-load-error">Could not load fields for this project: ' + err.message + '</p>';
+  });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  var select = document.getElementById('tfc-project-select');
+  if (select && select.value) tfcShowProject(select.value);
+});
+
+function tfcToggleTracker(key) {
+  var body  = document.getElementById('tfc-body-'  + key);
+  var arrow = document.getElementById('tfc-arrow-' + key);
+  if (!body) return;
+  if (body.classList.contains('tfc-open')) {
+    body.classList.remove('tfc-open');
+    arrow.innerHTML = '&#9660;';
+  } else {
+    body.classList.add('tfc-open');
+    arrow.innerHTML = '&#9650;';
+  }
+}
+
+function tfcUpdateCount(key) {
+  var body = document.getElementById('tfc-body-' + key);
+  var badge = document.getElementById('tfc-count-' + key);
+  if (!body || !badge) return;
+  var checked = body.querySelectorAll('input[type=checkbox]:checked').length;
+  badge.textContent = checked;
+  badge.nextElementSibling.textContent = ' / ' + body.querySelectorAll('input[type=checkbox]').length +
+    ' field' + (body.querySelectorAll('input[type=checkbox]').length === 1 ? '' : 's') + ' promoted';
+}
+</script>

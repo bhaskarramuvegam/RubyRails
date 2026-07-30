@@ -1,0 +1,63 @@
+= Tracker Fields Configuration
+
+Lets administrators "promote" selected custom fields so they render inside
+the standard fields area of the issue form (next to Priority, Assigned To,
+Category, etc.) instead of down in the separate "Custom fields" box.
+
+Configuration is per *project* and per *tracker*, and is done entirely from
+<b>Administration > Plugins > Tracker Fields Configuration</b>. The settings
+page always reads the live list of projects, trackers and custom fields from
+this Redmine instance - nothing is hard-coded, so newly added projects,
+trackers or custom fields show up automatically.
+
+== How it works
+
+For each project you configure, and each tracker within that project, you
+pick:
+
+1. Which custom fields should be promoted.
+2. Which standard field each promoted custom field should appear directly
+   after (e.g. "insert Root Cause after Priority").
+
+On the issue form, the plugin moves the promoted custom field's existing
+row (label + input) to sit right after the chosen standard field. It does
+not duplicate, re-render or copy the field - it is the exact same input
+element, just relocated - so validation, required-field checks, and any
+other plugin's interaction with that field keep working unchanged. If every
+custom field configured for a tracker is promoted, the (now empty) "Custom
+fields" box is hidden.
+
+The move re-applies correctly when the tracker or project dropdown is
+changed on the new-issue form: the plugin embeds rules for every tracker in
+the issue's project up front and watches the attributes box for the Ajax
+swap Redmine performs on tracker/project change, reapplying automatically.
+This works the same way on both new-issue and edit-issue forms.
+
+== Installation
+
+No database migration is required. This plugin only uses Redmine's built-in
+plugin settings storage (Setting.plugin_tracker_fields_configuration).
+
+The settings page loads the project list up front (id/name only) and fetches
+one project's tracker/custom-field table at a time via a small admin-only
+AJAX endpoint (+TrackerFieldsConfigurationController#project_fields+) when
+you pick it from the dropdown, caching it in the page so switching back
+doesn't re-fetch or lose your edits. This keeps the page fast even on
+instances with many projects and/or many custom fields per tracker.
+
+1. Copy/unzip this plugin into your Redmine +plugins+ directory as
+   +tracker_fields_configuration+.
+2. Restart Redmine.
+3. Go to Administration > Plugins > Tracker Fields Configuration > Configure,
+   pick a project, expand a tracker, and choose the fields to promote.
+
+== Notes
+
+* If a custom field is checked but no "insert after" standard field is
+  chosen for it, it is left in its normal position (nothing happens for it).
+* The "insert after" choices offered for a tracker are limited to the
+  standard fields actually enabled for that tracker (via +Tracker#core_fields+),
+  plus Status and Priority which are always present.
+* Disabling the plugin (General > Enable Plugin) restores every field to its
+  normal position without needing to clear individual project/tracker
+  selections.

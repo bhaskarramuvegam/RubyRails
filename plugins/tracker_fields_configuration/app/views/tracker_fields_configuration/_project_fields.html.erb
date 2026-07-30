@@ -1,0 +1,86 @@
+<%
+  pid = project.id
+  project_trackers = project.trackers.order(:position, :name).to_a
+%>
+
+<% if project_trackers.empty? %>
+  <p class="tfc-no-trackers">This project has no trackers enabled.</p>
+<% else %>
+  <% project_trackers.each do |tracker| %>
+    <%
+      tid = tracker.id
+      tracker_key = "#{pid}-#{tid}"
+      std_fields = TrackerFieldsConfiguration.standard_fields_for_tracker(tracker)
+      custom_fields = tracker.custom_fields.order(:position, :name).to_a
+      saved_field_ids = TrackerFieldsConfiguration.selected_field_ids(pid, tid)
+      saved_after = TrackerFieldsConfiguration.after_fields_for(pid, tid)
+      selected_count = custom_fields.count { |cf| saved_field_ids.include?(cf.id.to_s) }
+    %>
+    <div class="tfc-tracker" id="tfc-tracker-<%= tracker_key %>">
+      <div class="tfc-tracker-hd" onclick="tfcToggleTracker('<%= tracker_key %>')">
+        <span>
+          <%= tracker.name %>
+          <span class="tfc-count-badge" id="tfc-count-<%= tracker_key %>"><%= selected_count %></span>
+          <span style="color:#888;font-weight:normal;font-size:11px;">
+            / <%= custom_fields.size %> field<%= custom_fields.size == 1 ? '' : 's' %> promoted
+          </span>
+        </span>
+        <span class="tfc-arrow" id="tfc-arrow-<%= tracker_key %>">&#9660;</span>
+      </div>
+
+      <div class="tfc-tracker-bd" id="tfc-body-<%= tracker_key %>">
+        <% if custom_fields.empty? %>
+          <p class="tfc-no-trackers">This tracker has no custom fields.</p>
+        <% elsif std_fields.empty? %>
+          <p class="tfc-no-trackers">This tracker has no standard fields to insert after.</p>
+        <% else %>
+          <table class="tfc-field-table">
+            <thead>
+              <tr>
+                <th style="width:36px;"></th>
+                <th>Custom field</th>
+                <th>Insert after standard field</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% custom_fields.each do |cf| %>
+                <%
+                  cb_id = "tfc-cb-#{tracker_key}-#{cf.id}"
+                  checked = saved_field_ids.include?(cf.id.to_s)
+                  current_after = saved_after[cf.id.to_s]
+                %>
+                <tr>
+                  <td>
+                    <%= check_box_tag "settings[project_tracker_fields][#{pid}][#{tid}][]",
+                          cf.id.to_s, checked,
+                          id: cb_id,
+                          onchange: "tfcUpdateCount('#{tracker_key}')" %>
+                  </td>
+                  <td>
+                    <label for="<%= cb_id %>">
+                      <%= cf.name %>
+                      <% if cf.is_required %>
+                        <span style="font-size:10px;background:#f44336;color:#fff;border-radius:3px;padding:1px 4px;margin-left:4px;">required</span>
+                      <% end %>
+                    </label>
+                  </td>
+                  <td>
+                    <%= select_tag "settings[project_tracker_after][#{pid}][#{tid}][#{cf.id}]",
+                          options_for_select(
+                            std_fields.map { |f| [l(f[:label_key]), f[:key]] },
+                            current_after
+                          ),
+                          include_blank: '-- choose a standard field --' %>
+                  </td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+          <p class="tfc-hint">
+            A checked field with no standard field chosen is ignored (it stays in its normal position).
+          </p>
+        <% end %>
+      </div>
+    </div>
+  <% end %>
+<% end %>

@@ -1,0 +1,5 @@
+en:
+  tracker_fields_configuration:
+    plugin_name: 'Tracker Fields Configuration'
+    settings_title: 'Tracker Fields Configuration Settings'
+    enabled: 'Enable Plugin'
