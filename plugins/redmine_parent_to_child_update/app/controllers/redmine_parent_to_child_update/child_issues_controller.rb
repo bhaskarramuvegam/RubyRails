@@ -206,6 +206,10 @@ module RedmineParentToChildUpdate
           end
         end
         if primary_child.save
+          # Attach uploaded files using Redmine's built-in attachment mechanism
+          if params[:attachments].present? && primary_child.respond_to?(:save_attachments)
+            primary_child.save_attachments(params[:attachments])
+          end
           created_children << primary_child
         else
           return render json: { error: primary_child.errors.full_messages.join(', ') }, status: :unprocessable_entity

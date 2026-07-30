@@ -185,6 +185,21 @@ module RedmineParentToChildUpdate
       output << "    </div>"
 
       output << "    <div id='pcu-required-fields'></div>"
+
+      # File upload section
+      max_size_kb = Setting.attachment_max_size.to_i rescue 5120
+      max_size_mb = (max_size_kb / 1024.0).round(1)
+      output << "    <div class='pcu-field-block' style='margin-top:16px;'>"
+      output << "      <label for='pcu-files'>Files</label>"
+      output << "      <div style='border:1px dashed #ccc;border-radius:4px;padding:12px 14px;background:#fafafa;'>"
+      output << "        <input type='file' id='pcu-files' multiple"
+      output << "               style='font-size:15px;'>"
+      output << "        <div style='color:#888;font-size:12px;margin-top:6px;'>"
+      output << "          Maximum size: #{max_size_mb} MB per file"
+      output << "        </div>"
+      output << "      </div>"
+      output << "    </div>"
+
       output << "    <div id='pcu-status-msg'></div>"
       output << "  </div>"
 
@@ -232,6 +247,8 @@ module RedmineParentToChildUpdate
       output << "    if(inp.tagName==='SELECT') inp.selectedIndex=0;"
       output << "    else inp.value='';"
       output << "  });"
+      output << "  var fi=document.getElementById('pcu-files');"
+      output << "  if(fi) fi.value='';"
       output << "  var msg=document.getElementById('pcu-status-msg');"
       output << "  if(msg){msg.style.display='none';msg.textContent='';}"
       output << "}"
@@ -348,6 +365,13 @@ module RedmineParentToChildUpdate
       output << "  data.append('tracker_id',tracker);"
       output << "  data.append('subject',subject);"
       output << "  data.append('skip_chain',withChain?'0':'1');"
+      output << "  var fileInput=document.getElementById('pcu-files');"
+      output << "  if(fileInput&&fileInput.files.length>0){"
+      output << "    for(var fi=0;fi<fileInput.files.length;fi++){"
+      output << "      data.append('attachments['+fi+'][file]',fileInput.files[fi]);"
+      output << "      data.append('attachments['+fi+'][filename]',fileInput.files[fi].name);"
+      output << "    }"
+      output << "  }"
       output << "  cfInputs.forEach(function(inp){"
       output << "    if(inp.dataset.stdKey&&inp.value){"
       output << "      data.append('std_fields['+inp.dataset.stdKey+']',inp.value);"
