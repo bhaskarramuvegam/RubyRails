@@ -15,11 +15,12 @@
 
 require File.expand_path('../lib/tracker_fields_configuration', __FILE__)
 require File.expand_path('../lib/tracker_fields_configuration/hooks', __FILE__)
+require File.expand_path('../lib/tracker_fields_configuration/hidden_fields_hooks', __FILE__)
 
 Redmine::Plugin.register :tracker_fields_configuration do
   name 'Tracker Fields Configuration'
   author 'Development Team'
-  description 'Promote selected custom fields into the standard fields area of the issue form, configurable per project and tracker.'
+  description 'Promote selected custom fields into the standard fields area of the issue form, and hide/unhide fields, configurable per project and tracker.'
   version '1.0.0'
   url 'http://example.com/plugin'
   author_url 'http://example.com/author'
@@ -31,6 +32,11 @@ Redmine::Plugin.register :tracker_fields_configuration do
     'project_tracker_fields' => {},
     # Where each promoted custom field should be inserted, per project + tracker.
     # Hash: project_id (string) => tracker_id (string) => { custom_field_id (string) => standard_field_key (string) }
-    'project_tracker_after' => {}
+    'project_tracker_after' => {},
+    # Which fields are hidden entirely - a separate feature from the two
+    # above, read/written independently of them.
+    # Hash: project_id (string) => tracker_id (string) => [field_key (string), ...]
+    # field_key is "cf_<id>" for a custom field or "std_<key>" for a standard field.
+    'project_tracker_hidden_fields' => {}
   }, partial: 'settings/tracker_fields_configuration_settings'
 end

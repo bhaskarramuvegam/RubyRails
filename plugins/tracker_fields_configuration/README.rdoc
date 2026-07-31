@@ -41,6 +41,25 @@ matching its label text (e.g. "Priority:") against the field's translated
 name, rather than assuming a class name - so it degrades gracefully if a
 theme changes markup, instead of silently misplacing a field.
 
+== Hide / unhide fields (separate feature)
+
+Independent of field promotion above: for each project + tracker, you can
+also completely hide any standard field (Priority, Assigned To, Due Date,
+etc.) or custom field, from both the issue form and the show page. This is
+configured in its own "Hide / Unhide Fields" section on the same settings
+page, with its own project picker.
+
+This feature is implemented in its own files (+HiddenFieldsHooks+, its own
+controller action/route/partial, its own settings key
++project_tracker_hidden_fields+, its own JS namespace) so it cannot
+interfere with field promotion - each one only reads/writes its own
+settings key and has no code path that touches the other's.
+
+Hiding a *required* field can prevent saving an issue unless that field
+already has a usable default value, since the hidden input is still part
+of the form (just visually hidden) and Redmine still validates it - give
+it a sensible default before hiding it if it's required.
+
 == Installation
 
 No database migration is required. This plugin only uses Redmine's built-in

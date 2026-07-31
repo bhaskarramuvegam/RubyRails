@@ -133,4 +133,44 @@ module TrackerFieldsConfiguration
       acc[tracker_id] = rules unless rules.empty?
     end
   end
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # Hide / unhide fields - a separate feature from field promotion above.
+  # Stored under its own settings key so it can't interact with or corrupt
+  # the promotion config. Hidden field keys are prefixed to tell standard
+  # and custom fields apart in one flat list: "cf_<id>" or "std_<key>"
+  # (the latter matching STANDARD_FIELDS' :key values), same convention
+  # already used elsewhere in this codebase (redmine_parent_to_child_update).
+  # ═══════════════════════════════════════════════════════════════════════
+
+  # Raw hidden field keys (each "cf_<id>" or "std_<key>") for a project +
+  # tracker, in configured order.
+  def self.hidden_field_keys(project_id, tracker_id)
+    array_at('project_tracker_hidden_fields', project_id, tracker_id).map(&:to_s).uniq
+  end
+
+  def self.hidden_custom_field_ids(project_id, tracker_id)
+    hidden_field_keys(project_id, tracker_id)
+      .select { |k| k.start_with?('cf_') }
+      .map { |k| k.sub(/\Acf_/, '') }
+  end
+
+  def self.hidden_standard_field_keys(project_id, tracker_id)
+    hidden_field_keys(project_id, tracker_id)
+      .select { |k| k.start_with?('std_') }
+      .map { |k| k.sub(/\Astd_/, '') }
+  end
+
+  # Hidden field keys for every tracker configured under this project, as a
+  # Hash of tracker_id (String) => Array of prefixed field keys. Trackers
+  # with nothing hidden are omitted.
+  def self.hidden_keys_by_tracker(project_id)
+    return {} unless enabled?
+
+    tracker_ids = hash_at('project_tracker_hidden_fields', project_id).keys
+    tracker_ids.each_with_object({}) do |tracker_id, acc|
+      keys = hidden_field_keys(project_id, tracker_id)
+      acc[tracker_id] = keys unless keys.empty?
+    end
+  end
 end

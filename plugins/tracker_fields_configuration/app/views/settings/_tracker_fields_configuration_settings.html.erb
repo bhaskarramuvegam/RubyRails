@@ -132,8 +132,68 @@
   </div>
 </div>
 
+<%# ═══════════════════════════════════════════════════════════════════════════
+    SECTION 3 - Hide / unhide fields. A separate feature from field
+    promotion above: its own settings key (project_tracker_hidden_fields),
+    own project picker, own container, own preserved-fields block and own
+    JS namespace (tfcHide*), so it cannot interact with or break Section 2.
+    ═══════════════════════════════════════════════════════════════════════════ %>
+<style>
+.tfc-hide-project-panel { display:none; }
+.tfc-hide-project-panel.tfc-hide-active { display:block; }
+</style>
+<%
+  tfc_hide_projects = Project.active.sorted.pluck(:id, :name)
+%>
+<div class="tfc-box">
+  <div class="tfc-box-head">Hide / Unhide Fields</div>
+  <div class="tfc-box-body">
+    <p style="margin:0 0 14px;color:#555;font-size:13px;">
+      Pick a project below, then for each of its trackers choose which fields (standard or
+      custom) should be completely hidden from both the issue form and the issue view page.
+      This is independent of the field-promotion settings above - hiding a field here works
+      whether or not it's also configured to be promoted.
+    </p>
+
+    <% if tfc_hide_projects.empty? %>
+      <p class="tfc-no-projects">No active projects found in this Redmine instance.</p>
+    <% else %>
+      <label for="tfc-hide-project-select" style="display:block;font-weight:bold;font-size:13px;margin-bottom:4px;">
+        Project
+      </label>
+      <select id="tfc-hide-project-select" class="tfc-project-select" onchange="tfcHideShowProject(this.value)">
+        <% tfc_hide_projects.each do |pid, pname| %>
+          <option value="<%= pid %>"><%= pname %></option>
+        <% end %>
+      </select>
+
+      <div id="tfc-hide-projects-container"></div>
+
+      <%# Same "preserve unedited projects" safeguard as Section 2 above,
+          scoped to this feature's own settings key and its own class names
+          so it can never remove Section 2's preserved fields or vice versa. %>
+      <%
+        raw_hidden_cfg = TrackerFieldsConfiguration.hash_at('project_tracker_hidden_fields')
+      %>
+      <div id="tfc-hide-preserved-fields" style="display:none;">
+        <% raw_hidden_cfg.each do |ppid, trackers| %>
+          <% next unless trackers.is_a?(Hash) %>
+          <% trackers.each do |ttid, field_keys| %>
+            <% Array(field_keys).each do |field_key| %>
+              <input type="hidden" class="tfc-hide-preserve tfc-hide-preserve-<%= ppid %>"
+                     name="settings[project_tracker_hidden_fields][<%= ppid %>][<%= ttid %>][]"
+                     value="<%= field_key %>">
+            <% end %>
+          <% end %>
+        <% end %>
+      </div>
+    <% end %>
+  </div>
+</div>
+
 <script>
 var TFC_FIELDS_URL = "<%= j tracker_fields_configuration_project_fields_path %>";
+var TFC_HIDDEN_FIELDS_URL = "<%= j tracker_fields_configuration_project_hidden_fields_path %>";
 </script>
 
 <script>
@@ -199,5 +259,74 @@ function tfcUpdateCount(key) {
   badge.textContent = checked;
   badge.nextElementSibling.textContent = ' / ' + body.querySelectorAll('input[type=checkbox]').length +
     ' field' + (body.querySelectorAll('input[type=checkbox]').length === 1 ? '' : 's') + ' promoted';
+}
+</script>
+
+<%# ═══════════════════════════════════════════════════════════════════════════
+    Section 3's own JS namespace (tfcHide*) - entirely separate functions and
+    element ids from Section 2's above, so neither can interfere with the
+    other's project panels, accordions or counters.
+    ═══════════════════════════════════════════════════════════════════════════ %>
+<script>
+function tfcHideShowProject(pid) {
+  document.querySelectorAll('.tfc-hide-project-panel').forEach(function(panel) {
+    panel.classList.remove('tfc-hide-active');
+  });
+
+  var existing = document.getElementById('tfc-hide-project-' + pid);
+  if (existing) {
+    existing.classList.add('tfc-hide-active');
+    return;
+  }
+
+  var container = document.getElementById('tfc-hide-projects-container');
+  if (!container) return;
+
+  var panel = document.createElement('div');
+  panel.className = 'tfc-hide-project-panel tfc-hide-active';
+  panel.id = 'tfc-hide-project-' + pid;
+  panel.innerHTML = '<p class="tfc-loading">Loading fields&hellip;</p>';
+  container.appendChild(panel);
+
+  fetch(TFC_HIDDEN_FIELDS_URL + '?id=' + encodeURIComponent(pid), {
+    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    credentials: 'same-origin'
+  }).then(function(response) {
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    return response.text();
+  }).then(function(html) {
+    panel.innerHTML = html;
+    document.querySelectorAll('.tfc-hide-preserve-' + pid).forEach(function(el) { el.remove(); });
+  }).catch(function(err) {
+    panel.innerHTML = '<p class="tfc-load-error">Could not load fields for this project: ' + err.message + '</p>';
+  });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  var select = document.getElementById('tfc-hide-project-select');
+  if (select && select.value) tfcHideShowProject(select.value);
+});
+
+function tfcHideToggleTracker(key) {
+  var body  = document.getElementById('tfc-hide-body-'  + key);
+  var arrow = document.getElementById('tfc-hide-arrow-' + key);
+  if (!body) return;
+  if (body.classList.contains('tfc-open')) {
+    body.classList.remove('tfc-open');
+    arrow.innerHTML = '&#9660;';
+  } else {
+    body.classList.add('tfc-open');
+    arrow.innerHTML = '&#9650;';
+  }
+}
+
+function tfcHideUpdateCount(key) {
+  var body = document.getElementById('tfc-hide-body-' + key);
+  var badge = document.getElementById('tfc-hide-count-' + key);
+  if (!body || !badge) return;
+  var checked = body.querySelectorAll('input[type=checkbox]:checked').length;
+  badge.textContent = checked;
+  badge.nextElementSibling.textContent = ' / ' + body.querySelectorAll('input[type=checkbox]').length +
+    ' field' + (body.querySelectorAll('input[type=checkbox]').length === 1 ? '' : 's') + ' hidden';
 }
 </script>

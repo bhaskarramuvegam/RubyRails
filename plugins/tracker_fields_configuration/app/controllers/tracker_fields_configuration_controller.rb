@@ -13,6 +13,12 @@ class TrackerFieldsConfigurationController < ApplicationController
     render partial: 'tracker_fields_configuration/project_fields', locals: { project: @project }
   end
 
+  # Independent of project_fields above - serves the hide/unhide table for
+  # the same project, not the field-promotion table.
+  def project_hidden_fields
+    render partial: 'tracker_fields_configuration/project_hidden_fields', locals: { project: @project }
+  end
+
   private
 
   def require_admin_user

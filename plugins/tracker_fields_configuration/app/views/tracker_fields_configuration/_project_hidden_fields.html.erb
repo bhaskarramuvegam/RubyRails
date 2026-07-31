@@ -1,0 +1,95 @@
+<%
+  pid = project.id
+  project_trackers = project.trackers.order(:position, :name).to_a
+%>
+
+<% if project_trackers.empty? %>
+  <p class="tfc-no-trackers">This project has no trackers enabled.</p>
+<% else %>
+  <% project_trackers.each do |tracker| %>
+    <%
+      tid = tracker.id
+      tracker_key = "#{pid}-#{tid}"
+      std_fields = TrackerFieldsConfiguration.standard_fields_for_tracker(tracker)
+      custom_fields = tracker.custom_fields.order(:position, :name).to_a
+      hidden_keys = TrackerFieldsConfiguration.hidden_field_keys(pid, tid)
+      total_fields = std_fields.size + custom_fields.size
+      hidden_count = hidden_keys.size
+    %>
+    <div class="tfc-tracker" id="tfc-hide-tracker-<%= tracker_key %>">
+      <div class="tfc-tracker-hd" onclick="tfcHideToggleTracker('<%= tracker_key %>')">
+        <span>
+          <%= tracker.name %>
+          <span class="tfc-count-badge" id="tfc-hide-count-<%= tracker_key %>"><%= hidden_count %></span>
+          <span style="color:#888;font-weight:normal;font-size:11px;">
+            / <%= total_fields %> field<%= total_fields == 1 ? '' : 's' %> hidden
+          </span>
+        </span>
+        <span class="tfc-arrow" id="tfc-hide-arrow-<%= tracker_key %>">&#9660;</span>
+      </div>
+
+      <div class="tfc-tracker-bd" id="tfc-hide-body-<%= tracker_key %>">
+        <% if total_fields.zero? %>
+          <p class="tfc-no-trackers">This tracker has no fields to hide.</p>
+        <% else %>
+          <table class="tfc-field-table">
+            <thead>
+              <tr>
+                <th style="width:36px;"></th>
+                <th>Field</th>
+                <th style="width:90px;">Type</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% std_fields.each do |f| %>
+                <%
+                  field_key = "std_#{f[:key]}"
+                  cb_id = "tfc-hide-cb-#{tracker_key}-#{field_key}"
+                  checked = hidden_keys.include?(field_key)
+                %>
+                <tr>
+                  <td>
+                    <%= check_box_tag "settings[project_tracker_hidden_fields][#{pid}][#{tid}][]",
+                          field_key, checked,
+                          id: cb_id,
+                          onchange: "tfcHideUpdateCount('#{tracker_key}')" %>
+                  </td>
+                  <td><label for="<%= cb_id %>"><%= l(f[:label_key]) %></label></td>
+                  <td style="color:#888;font-size:11px;">Standard</td>
+                </tr>
+              <% end %>
+              <% custom_fields.each do |cf| %>
+                <%
+                  field_key = "cf_#{cf.id}"
+                  cb_id = "tfc-hide-cb-#{tracker_key}-#{field_key}"
+                  checked = hidden_keys.include?(field_key)
+                %>
+                <tr>
+                  <td>
+                    <%= check_box_tag "settings[project_tracker_hidden_fields][#{pid}][#{tid}][]",
+                          field_key, checked,
+                          id: cb_id,
+                          onchange: "tfcHideUpdateCount('#{tracker_key}')" %>
+                  </td>
+                  <td>
+                    <label for="<%= cb_id %>">
+                      <%= cf.name %>
+                      <% if cf.is_required %>
+                        <span style="font-size:10px;background:#f44336;color:#fff;border-radius:3px;padding:1px 4px;margin-left:4px;">required</span>
+                      <% end %>
+                    </label>
+                  </td>
+                  <td style="color:#888;font-size:11px;">Custom</td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+          <p class="tfc-hint">
+            Hiding a required field can prevent saving the issue unless it already has a default
+            value - double-check that before hiding a required field.
+          </p>
+        <% end %>
+      </div>
+    </div>
+  <% end %>
+<% end %>
