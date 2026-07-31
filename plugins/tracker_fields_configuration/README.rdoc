@@ -33,6 +33,14 @@ the issue's project up front and watches the attributes box for the Ajax
 swap Redmine performs on tracker/project change, reapplying automatically.
 This works the same way on both new-issue and edit-issue forms.
 
+The promotion also applies to the read-only issue *show* page, which uses
+completely different markup than the form (div-based rows instead of
+labeled inputs). There, the promoted custom field's row is matched by its
++cf_<id>+ CSS class and the target standard field's row is found by
+matching its label text (e.g. "Priority:") against the field's translated
+name, rather than assuming a class name - so it degrades gracefully if a
+theme changes markup, instead of silently misplacing a field.
+
 == Installation
 
 No database migration is required. This plugin only uses Redmine's built-in
