@@ -117,13 +117,22 @@ module TrackerFieldsConfiguration
             });
 
             // If a "Custom fields" box is now empty because every field in
-            // it was promoted away, hide the empty box instead of leaving
-            // a blank fieldset behind.
+            // it was promoted away, hide that specific now-empty container
+            // - and ONLY that container. This used to climb to
+            // parent.closest('fieldset') to hide a wrapping legend/border
+            // too, but on this Redmine instance's markup that ancestor
+            // fieldset can wrap the ENTIRE issue form (subject, all
+            // standard fields, everything), not just the custom fields
+            // section - hiding it wiped out the whole edit form for any
+            // tracker where every custom field got promoted away, leaving
+            // only the Log time / Notes sections (which live outside that
+            // fieldset) visible. Hiding just the empty inner container is
+            // narrower but safe: by construction it only ever held the
+            // custom field rows that were just moved out of it.
             touchedParents.forEach(function(parent) {
               try {
                 if (parent.children.length === 0) {
-                  var fieldset = parent.closest('fieldset');
-                  (fieldset || parent).style.display = 'none';
+                  parent.style.display = 'none';
                 }
               } catch (e) { /* best effort only */ }
             });
