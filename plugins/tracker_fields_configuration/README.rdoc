@@ -75,16 +75,56 @@ register one manually:
 4. Click *+ Add* - it now appears with its own checkbox, same as any
    standard or custom field.
 
+The Hide/Unhide Fields box always shows a "Registered 'Other Fields'
+(all projects)" summary - independent of which projects happen to be
+checked in the bulk tree, since that resets to unchecked on every page
+load. Without this, a field registered via bulk mode looks like it
+"disappeared" after a reload, when it's actually just that its tracker's
+panel isn't shown again until the same projects are re-checked.
+
+It's grouped into a collapsed-by-default accordion per project (click to
+expand). Each field's "Hidden" checkbox and Remove button work directly
+from this summary and take effect on the page's normal Save - no need to
+open the single-project or bulk panel just to toggle or remove one you
+already know about.
+
+The summary always shows one row per unique (project, tracker, field) -
+if a field was registered more than once for the same tracker (the bulk
+"+ Add" flow used to allow this if you clicked it again in a later
+session without noticing the field was already listed), saving from this
+table collapses those duplicates back down to one automatically.
+
+The summary is the *only* place that can toggle or remove an
+already-registered field. Earlier, the bulk panel's "already registered"
+list also had its own checkbox for this, but that meant two independent
+parts of the same page could submit different values for the same field
+in one save - specifically, the single-project panel's and bulk mode's
+"preserve everything you're not actively editing" safeguards always
+carried forward whatever the field's *previous* state was, so removing or
+unhiding it via the summary got silently undone by that stale copy on the
+very next save. Both of those safeguards now explicitly skip
+project_tracker_extra_fields/_labels and any ext_-prefixed hidden-field
+entry, since the summary already covers that data unconditionally for
+every project; the bulk panel's "already registered" list is read-only
+now, purely for awareness while picking projects.
+
 == Configuring multiple projects at once
 
 Both the field-promotion section and the hide/unhide section have a mode
 toggle at the top: *Configure one project* (the original flow, unchanged)
-or *Configure multiple projects*. The bulk mode shows a checkbox tree of
-every project - checking a parent project automatically checks (and
-visually cascades to) all of its sub-projects, matching how Windows'
-"Turn Windows features on or off" dialog behaves. The tracker/field panel
-below the tree shows the *union* of trackers enabled on any checked
-project.
+or *Configure multiple projects*. The bulk mode's project tree is
+collapsed behind a "Show project list" toggle by default (with a live
+count of how many projects are currently checked next to it); each parent
+project with sub-projects gets its own +/- button to expand just that
+branch. Checking a parent project automatically checks (and visually
+cascades to) all of its sub-projects, matching how Windows' "Turn Windows
+features on or off" dialog behaves - collapsing a branch doesn't affect
+which boxes are checked, it's purely a display choice. The tracker/field
+panel below the tree shows the *union* of trackers enabled on any checked
+project, and pre-fills from current state whenever every checked project
+that has that field agrees (leaving it blank with a "mixed" badge when
+they don't), so opening bulk mode and saving without changing anything
+doesn't silently clear existing configuration.
 
 <b>Saving in bulk mode overwrites</b> the checked projects' configuration
 for every tracker shown in the panel - it isn't a merge. Leaving a

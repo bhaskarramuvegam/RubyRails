@@ -1,0 +1,53 @@
+<%#
+  Recursive project-tree node. Renders itself for every child, so parent
+  and child rows are true DOM descendants of each other rather than a flat
+  indented list - that's what lets collapsing a parent hide its whole
+  subtree with a single display:none on .tfc-tree-children, regardless of
+  how deep it goes, instead of having to hide every affected row by hand.
+
+  Locals:
+    node:               { id:, name:, parent_id: }
+    nodes_by_id:        Hash of id => node, for looking up a child by id
+    children_by_parent: Hash of parent_id => [child_id, ...] (nil key = roots)
+    descendants_by_id:  Hash of id => [all descendant ids] (for the
+                        existing checkbox cascade-select logic - unrelated
+                        to this expand/collapse feature)
+    prefix:             'tfc-ptree' or 'tfc-htree' - keeps the two trees'
+                        checkbox ids/JS calls independent
+    onchange_fn:        name of the section's "selection changed" JS
+                        function, called after every checkbox change
+%>
+<%
+  child_ids = children_by_parent[node[:id]] || []
+%>
+<div class="tfc-tree-node">
+  <div class="tfc-tree-row">
+    <% if child_ids.any? %>
+      <button type="button" class="tfc-tree-toggle" onclick="tfcTreeNodeToggle(this)">+</button>
+    <% else %>
+      <span class="tfc-tree-toggle-spacer"></span>
+    <% end %>
+    <label>
+      <input type="checkbox" class="tfc-tree-cb" id="<%= prefix %>-cb-<%= node[:id] %>"
+             data-project-id="<%= node[:id] %>"
+             data-parent-id="<%= node[:parent_id] %>"
+             data-descendants="<%= (descendants_by_id[node[:id]] || []).join(',') %>"
+             onchange="tfcTreeToggle('<%= prefix %>', this, <%= onchange_fn %>)">
+      <%= node[:name] %>
+    </label>
+  </div>
+  <% if child_ids.any? %>
+    <div class="tfc-tree-children" style="display:none;">
+      <% child_ids.each do |cid| %>
+        <%= render partial: 'tracker_fields_configuration/tree_node', locals: {
+              node: nodes_by_id[cid],
+              nodes_by_id: nodes_by_id,
+              children_by_parent: children_by_parent,
+              descendants_by_id: descendants_by_id,
+              prefix: prefix,
+              onchange_fn: onchange_fn
+            } %>
+      <% end %>
+    </div>
+  <% end %>
+</div>

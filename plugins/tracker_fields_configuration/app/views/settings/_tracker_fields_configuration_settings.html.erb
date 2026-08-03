@@ -66,44 +66,51 @@
 
 .tfc-tree           { max-height:320px; overflow-y:auto; border:1px solid #ddd; border-radius:4px;
                       padding:8px 10px; background:#fff; margin-bottom:12px; }
-.tfc-tree-row       { padding:3px 0; font-size:13px; white-space:nowrap; }
+.tfc-tree-row       { padding:3px 0; font-size:13px; white-space:nowrap; display:flex; align-items:center; }
 .tfc-tree-row label { font-weight:normal; cursor:pointer; }
 .tfc-tree-row input[type=checkbox] { margin-right:6px; vertical-align:middle; }
+.tfc-tree-children  { padding-left:20px; }
+.tfc-tree-toggle     { width:16px; height:16px; line-height:13px; padding:0; margin-right:6px;
+                      border:1px solid #999; background:#fff; border-radius:2px; cursor:pointer;
+                      font-size:11px; font-weight:bold; text-align:center; flex-shrink:0; }
+.tfc-tree-toggle-spacer { display:inline-block; width:16px; margin-right:6px; flex-shrink:0; }
+
+.tfc-tree-toggle-row { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+.tfc-tree-summary    { font-size:12px; color:#666; }
 </style>
 
 <%# ═══════════════════════════════════════════════════════════════════════════
     Project tree data shared by both Section 2 and Section 3's "configure
-    multiple projects" mode below. Computed once, here, from the nested
-    set's own lft/rgt boundaries (Project.active.sorted already returns
-    rows in depth-first order) so no N+1 ancestor/descendant queries are
-    needed per project.
+    multiple projects" mode below. Rendered as a true nested DOM tree (see
+    _tree_node.html.erb) rather than a flat indented list, so collapsing a
+    parent hides its whole subtree for free via one display:none - no need
+    to track/hide every affected descendant row by hand. Built from each
+    project's parent_id alone, so no N+1 ancestor/descendant queries.
     ═══════════════════════════════════════════════════════════════════════════ %>
 <%
   tfc_all_projects = Project.active.sorted.to_a
   tfc_active_ids = tfc_all_projects.map(&:id)
 
-  tfc_level_stack = []
-  tfc_project_tree = tfc_all_projects.map do |p|
-    tfc_level_stack.pop while tfc_level_stack.any? && tfc_level_stack.last < p.lft
-    level = tfc_level_stack.size
-    tfc_level_stack.push(p.rgt)
+  tfc_nodes_by_id = {}
+  tfc_all_projects.each do |p|
     parent_id = (p.parent_id && tfc_active_ids.include?(p.parent_id)) ? p.parent_id : nil
-    { id: p.id, name: p.name, level: level, parent_id: parent_id }
+    tfc_nodes_by_id[p.id] = { id: p.id, name: p.name, parent_id: parent_id }
   end
+  tfc_root_ids = tfc_nodes_by_id.values.select { |n| n[:parent_id].nil? }.map { |n| n[:id] }
 
   tfc_children_by_parent = Hash.new { |h, k| h[k] = [] }
-  tfc_project_tree.each { |node| tfc_children_by_parent[node[:parent_id]] << node[:id] if node[:parent_id] }
+  tfc_nodes_by_id.each_value { |node| tfc_children_by_parent[node[:parent_id]] << node[:id] if node[:parent_id] }
 
   tfc_descendants_by_id = {}
-  tfc_project_tree.each do |node|
+  tfc_nodes_by_id.each_key do |id|
     acc = []
-    stack = tfc_children_by_parent[node[:id]].dup
+    stack = tfc_children_by_parent[id].dup
     until stack.empty?
       cid = stack.shift
       acc << cid
       stack.concat(tfc_children_by_parent[cid])
     end
-    tfc_descendants_by_id[node[:id]] = acc
+    tfc_descendants_by_id[id] = acc
   end
 %>
 
@@ -206,18 +213,21 @@
           sub-projects. Configure the fields below once, then save to apply that configuration to
           every checked project.
         </p>
-        <div class="tfc-tree" id="tfc-ptree-container">
-          <% tfc_project_tree.each do |node| %>
-            <div class="tfc-tree-row" style="padding-left:<%= node[:level] * 18 %>px;">
-              <label>
-                <input type="checkbox" class="tfc-tree-cb" id="tfc-ptree-cb-<%= node[:id] %>"
-                       data-project-id="<%= node[:id] %>"
-                       data-parent-id="<%= node[:parent_id] %>"
-                       data-descendants="<%= tfc_descendants_by_id[node[:id]].join(',') %>"
-                       onchange="tfcTreeToggle('tfc-ptree', this, tfcPromoteSelectionChanged)">
-                <%= node[:name] %>
-              </label>
-            </div>
+        <div class="tfc-tree-toggle-row">
+          <button type="button" class="tfc-mode-btn" id="tfc-ptree-toggle-btn"
+                  onclick="tfcToggleTreeVisibility('tfc-ptree-container', 'tfc-ptree-toggle-btn')">Show project list</button>
+          <span id="tfc-ptree-summary" class="tfc-tree-summary">No projects checked yet</span>
+        </div>
+        <div class="tfc-tree" id="tfc-ptree-container" style="display:none;">
+          <% tfc_root_ids.each do |rid| %>
+            <%= render partial: 'tracker_fields_configuration/tree_node', locals: {
+                  node: tfc_nodes_by_id[rid],
+                  nodes_by_id: tfc_nodes_by_id,
+                  children_by_parent: tfc_children_by_parent,
+                  descendants_by_id: tfc_descendants_by_id,
+                  prefix: 'tfc-ptree',
+                  onchange_fn: 'tfcPromoteSelectionChanged'
+                } %>
           <% end %>
         </div>
 
@@ -253,6 +263,115 @@
       promoted.
     </p>
 
+    <%# ═════════════════════════════════════════════════════════════════════
+        Always-visible summary of every registered "Other field" (e.g.
+        Agile Sprint), independent of which projects are currently checked
+        in the bulk tree below (which resets to unchecked on every page
+        load). Grouped into a per-project accordion (collapsed by default,
+        reusing the same tfcToggleTracker accordion already used
+        elsewhere). Each row's "Hidden" checkbox and Remove button are
+        REAL settings[...] inputs, submitted directly on the page's normal
+        Save - no shadow-form sync needed here, unlike the bulk panels,
+        because this table is rendered once with the server-side state
+        already known (it's not fetched dynamically for an arbitrary,
+        changing set of checked projects).
+
+        Every (project, tracker) pair's OTHER hidden fields (standard,
+        custom, or any other registered extra field not shown as its own
+        row in that pair's group) are carried forward as fixed hidden
+        inputs computed ONCE per pair, so toggling or removing one row
+        here can never affect a sibling field's hidden state.
+        ═════════════════════════════════════════════════════════════════════ %>
+    <%
+      tfc_extra_registrations = TrackerFieldsConfiguration.all_extra_field_registrations
+    %>
+    <% if tfc_extra_registrations.any? %>
+      <%
+        tfc_extra_project_names = Project.where(id: tfc_extra_registrations.map { |r| r[:project_id] }.uniq).pluck(:id, :name).to_h
+        tfc_extra_tracker_names = Tracker.where(id: tfc_extra_registrations.map { |r| r[:tracker_id] }.uniq).pluck(:id, :name).to_h
+
+        tfc_extra_by_project = {}
+        tfc_extra_registrations.each do |r|
+          tfc_extra_by_project[r[:project_id]] ||= {}
+          tfc_extra_by_project[r[:project_id]][r[:tracker_id]] ||= []
+          tfc_extra_by_project[r[:project_id]][r[:tracker_id]] << r
+        end
+      %>
+      <div class="tfc-box" style="margin-bottom:16px;">
+        <div class="tfc-box-head">Registered "Other Fields" (all projects)</div>
+        <div class="tfc-box-body">
+          <% tfc_extra_by_project.each do |pid, trackers_hash| %>
+            <%
+              project_key = "extrareg-#{pid}"
+              row_count = trackers_hash.values.flatten.size
+            %>
+            <div class="tfc-tracker" id="tfc-tracker-<%= project_key %>">
+              <div class="tfc-tracker-hd" onclick="tfcToggleTracker('<%= project_key %>')">
+                <span>
+                  <%= tfc_extra_project_names[pid.to_i] || "Project ##{pid}" %>
+                  <span class="tfc-count-badge"><%= row_count %></span>
+                  <span style="color:#888;font-weight:normal;font-size:11px;">
+                    field<%= row_count == 1 ? '' : 's' %> registered
+                  </span>
+                </span>
+                <span class="tfc-arrow" id="tfc-arrow-<%= project_key %>">&#9660;</span>
+              </div>
+              <div class="tfc-tracker-bd" id="tfc-body-<%= project_key %>">
+                <table class="tfc-field-table">
+                  <thead>
+                    <tr>
+                      <th>Tracker</th>
+                      <th>Field</th>
+                      <th style="width:80px;">Hidden</th>
+                      <th style="width:80px;"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <% trackers_hash.each do |tid, regs| %>
+                      <%
+                        group_ext_keys = regs.map { |r| "ext_#{r[:key]}" }
+                        other_hidden_keys = TrackerFieldsConfiguration.hidden_field_keys(pid, tid) - group_ext_keys
+                      %>
+                      <% other_hidden_keys.each do |k| %>
+                        <input type="hidden" name="settings[project_tracker_hidden_fields][<%= pid %>][<%= tid %>][]" value="<%= k %>">
+                      <% end %>
+                      <% regs.each do |reg| %>
+                        <%
+                          row_id = "tfc-extrareg-row-#{pid}-#{tid}-#{reg[:key]}"
+                          cb_id = "tfc-extrareg-cb-#{pid}-#{tid}-#{reg[:key]}"
+                        %>
+                        <tr id="<%= row_id %>">
+                          <td><%= tfc_extra_tracker_names[tid.to_i] || "Tracker ##{tid}" %></td>
+                          <td>
+                            <%= reg[:label] %>
+                            <input type="hidden" name="settings[project_tracker_extra_fields][<%= pid %>][<%= tid %>][]" value="<%= reg[:key] %>">
+                            <input type="hidden" name="settings[project_tracker_extra_field_labels][<%= pid %>][<%= tid %>][<%= reg[:key] %>]" value="<%= reg[:label] %>">
+                          </td>
+                          <td>
+                            <input type="checkbox" id="<%= cb_id %>"
+                                   name="settings[project_tracker_hidden_fields][<%= pid %>][<%= tid %>][]"
+                                   value="ext_<%= reg[:key] %>" <%= 'checked' if reg[:hidden] %>>
+                          </td>
+                          <td>
+                            <button type="button" class="tfc-add-btn" style="background:#e53935;padding:3px 8px;font-size:11px;"
+                                    onclick="tfcRemoveExtraRegistration('<%= row_id %>')">Remove</button>
+                          </td>
+                        </tr>
+                      <% end %>
+                    <% end %>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          <% end %>
+          <p class="tfc-hint">
+            Check/uncheck "Hidden" to show or hide a field, or click Remove to unregister it
+            entirely - both take effect the next time you save this page.
+          </p>
+        </div>
+      </div>
+    <% end %>
+
     <div id="tfc-hide-modes">
       <div class="tfc-mode-toggle">
         <button type="button" class="tfc-mode-btn tfc-mode-btn-active" data-mode="single"
@@ -281,47 +400,28 @@
       <div id="tfc-hide-projects-container"></div>
 
       <%# Same "preserve unedited projects" safeguard as Section 2 above,
-          scoped to this feature's own settings keys and its own class
+          scoped to this feature's own settings key and its own class
           names so it can never remove Section 2's preserved fields or vice
-          versa. Covers all three keys this section owns: which fields are
-          hidden, plus the registered extra-field catalog and its labels -
-          without preserving the latter two, saving while another
-          project's Sprint-style registrations were never loaded this
-          session would wipe them. %>
+          versa. Only covers standard/custom (std_/cf_) hidden-field
+          entries - ext_-prefixed ones (and the extra-field catalog itself,
+          project_tracker_extra_fields/_labels) are deliberately excluded
+          here, because the always-visible "Registered Other Fields"
+          summary above is now the sole, unconditional renderer of that
+          data for every project regardless of what's loaded here. If this
+          block also preserved it, removing or unhiding a field via that
+          summary would get silently resubmitted/resurrected by this
+          block's stale copy on the very next save. %>
       <%
         raw_hidden_cfg = TrackerFieldsConfiguration.hash_at('project_tracker_hidden_fields')
-        raw_extra_cfg = TrackerFieldsConfiguration.hash_at('project_tracker_extra_fields')
-        raw_extra_labels_cfg = TrackerFieldsConfiguration.hash_at('project_tracker_extra_field_labels')
       %>
       <div id="tfc-hide-preserved-fields" style="display:none;">
         <% raw_hidden_cfg.each do |ppid, trackers| %>
           <% next unless trackers.is_a?(Hash) %>
           <% trackers.each do |ttid, field_keys| %>
-            <% Array(field_keys).each do |field_key| %>
+            <% Array(field_keys).reject { |k| k.to_s.start_with?('ext_') }.each do |field_key| %>
               <input type="hidden" class="tfc-hide-preserve tfc-hide-preserve-<%= ppid %>"
                      name="settings[project_tracker_hidden_fields][<%= ppid %>][<%= ttid %>][]"
                      value="<%= field_key %>">
-            <% end %>
-          <% end %>
-        <% end %>
-        <% raw_extra_cfg.each do |ppid, trackers| %>
-          <% next unless trackers.is_a?(Hash) %>
-          <% trackers.each do |ttid, keys| %>
-            <% Array(keys).each do |extra_key| %>
-              <input type="hidden" class="tfc-hide-preserve tfc-hide-preserve-<%= ppid %>"
-                     name="settings[project_tracker_extra_fields][<%= ppid %>][<%= ttid %>][]"
-                     value="<%= extra_key %>">
-            <% end %>
-          <% end %>
-        <% end %>
-        <% raw_extra_labels_cfg.each do |ppid, trackers| %>
-          <% next unless trackers.is_a?(Hash) %>
-          <% trackers.each do |ttid, label_map| %>
-            <% next unless label_map.is_a?(Hash) %>
-            <% label_map.each do |extra_key, label| %>
-              <input type="hidden" class="tfc-hide-preserve tfc-hide-preserve-<%= ppid %>"
-                     name="settings[project_tracker_extra_field_labels][<%= ppid %>][<%= ttid %>][<%= extra_key %>]"
-                     value="<%= label %>">
             <% end %>
           <% end %>
         <% end %>
@@ -342,18 +442,21 @@
           sub-projects. Configure the fields below once, then save to apply that configuration to
           every checked project.
         </p>
-        <div class="tfc-tree" id="tfc-htree-container">
-          <% tfc_project_tree.each do |node| %>
-            <div class="tfc-tree-row" style="padding-left:<%= node[:level] * 18 %>px;">
-              <label>
-                <input type="checkbox" class="tfc-tree-cb" id="tfc-htree-cb-<%= node[:id] %>"
-                       data-project-id="<%= node[:id] %>"
-                       data-parent-id="<%= node[:parent_id] %>"
-                       data-descendants="<%= tfc_descendants_by_id[node[:id]].join(',') %>"
-                       onchange="tfcTreeToggle('tfc-htree', this, tfcHideBulkSelectionChanged)">
-                <%= node[:name] %>
-              </label>
-            </div>
+        <div class="tfc-tree-toggle-row">
+          <button type="button" class="tfc-mode-btn" id="tfc-htree-toggle-btn"
+                  onclick="tfcToggleTreeVisibility('tfc-htree-container', 'tfc-htree-toggle-btn')">Show project list</button>
+          <span id="tfc-htree-summary" class="tfc-tree-summary">No projects checked yet</span>
+        </div>
+        <div class="tfc-tree" id="tfc-htree-container" style="display:none;">
+          <% tfc_root_ids.each do |rid| %>
+            <%= render partial: 'tracker_fields_configuration/tree_node', locals: {
+                  node: tfc_nodes_by_id[rid],
+                  nodes_by_id: tfc_nodes_by_id,
+                  children_by_parent: tfc_children_by_parent,
+                  descendants_by_id: tfc_descendants_by_id,
+                  prefix: 'tfc-htree',
+                  onchange_fn: 'tfcHideBulkSelectionChanged'
+                } %>
           <% end %>
         </div>
 
@@ -635,6 +738,43 @@ function tfcTreeToggle(prefix, cb, onSelectionChanged) {
   onSelectionChanged();
 }
 
+/* The tree is collapsed by default so it doesn't take up space until an
+   admin actually wants to pick projects - this just shows/hides it and
+   flips the button label; it never affects which checkboxes are checked. */
+function tfcToggleTreeVisibility(containerId, buttonId) {
+  var container = document.getElementById(containerId);
+  var btn = document.getElementById(buttonId);
+  if (!container) return;
+
+  var isHidden = container.style.display === 'none';
+  container.style.display = isHidden ? 'block' : 'none';
+  if (btn) btn.textContent = isHidden ? 'Hide project list' : 'Show project list';
+}
+
+/* Keeps the "N projects checked" summary next to the toggle button
+   accurate even while the tree itself is collapsed. */
+function tfcUpdateTreeSummary(prefix, summaryId) {
+  var el = document.getElementById(summaryId);
+  if (!el) return;
+  var n = tfcTreeCheckedIds(prefix).length;
+  el.textContent = n === 0 ? 'No projects checked yet' : (n + ' project' + (n === 1 ? '' : 's') + ' checked');
+}
+
+/* Expands/collapses one parent's direct children container (nested DOM,
+   see _tree_node.html.erb) - the +/- button toggles ONLY its own node's
+   subtree, independent of every other node's expand state. Purely visual;
+   never touches which checkboxes are checked. */
+function tfcTreeNodeToggle(btn) {
+  var node = btn.closest('.tfc-tree-node');
+  if (!node) return;
+  var childrenBox = node.querySelector('.tfc-tree-children');
+  if (!childrenBox) return;
+
+  var isHidden = childrenBox.style.display === 'none';
+  childrenBox.style.display = isHidden ? 'block' : 'none';
+  btn.textContent = isHidden ? '−' : '+';
+}
+
 /* ── Mode toggle (Configure one project / Configure multiple projects) ── */
 function tfcSwitchMode(containerId, mode) {
   var container = document.getElementById(containerId);
@@ -657,6 +797,7 @@ function tfcPromoteSelectionChanged() {
 
 function tfcPromoteLoadBulkPanel() {
   var ids = tfcTreeCheckedIds('tfc-ptree');
+  tfcUpdateTreeSummary('tfc-ptree', 'tfc-ptree-summary');
   var panel = document.getElementById('tfc-bulk-panel');
   if (!panel) return;
 
@@ -748,6 +889,7 @@ function tfcHideBulkSelectionChanged() {
 
 function tfcHideBulkLoadPanel() {
   var ids = tfcTreeCheckedIds('tfc-htree');
+  tfcUpdateTreeSummary('tfc-htree', 'tfc-htree-summary');
   var panel = document.getElementById('tfc-bulkhide-panel');
   if (!panel) return;
 
@@ -842,8 +984,10 @@ function tfcBulkHideAddExtra(tid, applicableIdsCsv) {
   }
 
   var groupId = 'tfc-bulkhide-addition-' + tid + '-' + keyRaw;
-  if (document.getElementById(groupId)) {
-    alert('That field was already added in this session.');
+  var alreadyRegistered = document.getElementById('tfc-bulkhide-extraunion-row-' + tid + '-' + keyRaw);
+  if (document.getElementById(groupId) || alreadyRegistered) {
+    alert('That field is already registered for this tracker - see the table above (or the ' +
+          'always-visible "Registered Other Fields" summary) instead of adding it again.');
     return;
   }
 
@@ -874,5 +1018,18 @@ function tfcBulkHideAddExtra(tid, applicableIdsCsv) {
 
   labelInput.value = '';
   keyInput.value = '';
+}
+
+/* Removes one row from the always-visible "Registered Other Fields"
+   summary. This table is rendered with real name= attributes (not a
+   shadow-form pattern), so removing the <tr> from the DOM removes its
+   checkbox and hidden catalog inputs from the page's form entirely -
+   nothing else needs updating, since that (project, tracker) pair's
+   OTHER hidden fields are already carried forward as separate, unrelated
+   hidden inputs computed once per pair server-side. */
+function tfcRemoveExtraRegistration(rowId) {
+  if (!confirm('Remove this field\'s registration? This cannot be undone after you save.')) return;
+  var row = document.getElementById(rowId);
+  if (row) row.remove();
 }
 </script>

@@ -267,4 +267,80 @@ module TrackerFieldsConfiguration
   def self.project_ids_with_extra_field(project_ids, tracker_id, key)
     Array(project_ids).select { |pid| extra_field_keys(pid, tracker_id).include?(key.to_s) }
   end
+
+  # Every registered extra field across every project + tracker, as an
+  # array of { project_id:, tracker_id:, key:, label:, hidden: }. Exists so
+  # the settings page can show an at-a-glance list of everything that's
+  # been registered regardless of which projects happen to be checked in
+  # the bulk tree right now (which resets to unchecked on every page
+  # load) - without this, a registration made via bulk mode looks like it
+  # "disappeared" after a reload, when it's actually just that its
+  # tracker's panel isn't being shown until the same projects are
+  # re-checked.
+  #
+  # Deliberately goes through extra_field_keys (which dedupes) rather than
+  # reading the raw stored array directly - a stale duplicate-prevention
+  # check in the "+ Add" UI let the same field get registered many times
+  # over repeated add attempts, and this is also what lets the summary
+  # table self-heal that back down to one entry the next time it's saved,
+  # since it re-submits whatever it rendered.
+  def self.all_extra_field_registrations
+    hash_at('project_tracker_extra_fields').flat_map do |project_id, trackers|
+      next [] unless trackers.is_a?(Hash)
+
+      trackers.flat_map do |tracker_id, _raw_keys|
+        extra_field_keys(project_id, tracker_id).map do |key|
+          {
+            project_id: project_id,
+            tracker_id: tracker_id,
+            key: key,
+            label: extra_field_label(project_id, tracker_id, key) || key,
+            hidden: hidden_field_keys(project_id, tracker_id).include?("ext_#{key}")
+          }
+        end
+      end
+    end
+  end
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # Bulk-panel consistency checks. The bulk panels used to always render
+  # blank/unchecked regardless of current state, which meant an admin had
+  # no visibility into what was already configured and could silently
+  # wipe it by saving without touching anything (since bulk mode
+  # overwrites). These pre-fill the panel when every given project agrees,
+  # and flag it as "mixed" (left blank) when they don't, rather than
+  # guessing at a single project's state on the admin's behalf.
+  # ═══════════════════════════════════════════════════════════════════════
+
+  # Whether a custom field's promoted "after" choice is the same standard
+  # field across every given project (including projects where it isn't
+  # promoted at all - those count as "no value", same as any other
+  # value). Returns the shared value (or nil if nobody has it promoted)
+  # when consistent, or nil with mixed: true when they disagree.
+  def self.promoted_after_consistency(project_ids, tracker_id, custom_field_id)
+    ids = Array(project_ids)
+    return { value: nil, mixed: false } if ids.empty?
+
+    values = ids.map { |pid| after_field_key(pid, tracker_id, custom_field_id) }
+    if values.uniq.size == 1
+      { value: values.first, mixed: false }
+    else
+      { value: nil, mixed: true }
+    end
+  end
+
+  # Same idea as promoted_after_consistency, for a single hidden/not-hidden
+  # boolean (used for standard/custom/extra fields in the hide/unhide bulk
+  # panel).
+  def self.hidden_state_consistency(project_ids, tracker_id, field_key)
+    ids = Array(project_ids)
+    return { hidden: false, mixed: false } if ids.empty?
+
+    states = ids.map { |pid| hidden_field_keys(pid, tracker_id).include?(field_key.to_s) }
+    if states.uniq.size == 1
+      { hidden: states.first, mixed: false }
+    else
+      { hidden: false, mixed: true }
+    end
+  end
 end

@@ -1,13 +1,18 @@
 <%#
   Bulk multi-project field-promotion panel. Shows the UNION of trackers
   enabled on any of the checked projects (project_ids). Deliberately has
-  NO name= attributes and NO pre-filled checked state - the settings
-  page's JS (tfcBulkSync) mirrors whatever is visually selected here into
-  real settings[...] hidden inputs, once per checked project that
-  actually has that tracker (see each tracker's data-applicable-projects).
-  Saving overwrites those projects' existing config for the trackers
-  shown here - this panel is a "define what you want, then push it out"
-  tool, not an editor of any single project's current state.
+  NO name= attributes - the settings page's JS (tfcBulkSync) mirrors
+  whatever is visually selected here into real settings[...] hidden
+  inputs, once per checked project that actually has that tracker (see
+  each tracker's data-applicable-projects). Saving overwrites those
+  projects' existing config for the trackers shown here.
+
+  Each checkbox/select IS pre-filled from current state when every
+  applicable project agrees (including "nobody has it promoted", which
+  also counts as agreement) - otherwise it's left blank and flagged
+  "mixed". Without this, the panel always started blank regardless of
+  reality, so saving without touching anything would silently clear
+  existing configuration for every checked project.
 %>
 <% if trackers.empty? %>
   <p class="tfc-no-trackers">None of the checked projects have any trackers enabled.</p>
@@ -51,22 +56,30 @@
             </thead>
             <tbody>
               <% custom_fields.each do |cf| %>
+                <%
+                  consistency = TrackerFieldsConfiguration.promoted_after_consistency(applicable_ids, tid, cf.id)
+                %>
                 <tr>
                   <td>
                     <input type="checkbox" class="tfc-bulk-cf-checkbox"
-                           data-tracker-id="<%= tid %>" data-cf-id="<%= cf.id %>" onchange="tfcBulkSync()">
+                           data-tracker-id="<%= tid %>" data-cf-id="<%= cf.id %>"
+                           <%= 'checked' if consistency[:value].present? %> onchange="tfcBulkSync()">
                   </td>
                   <td>
                     <%= cf.name %>
                     <% if cf.is_required %>
                       <span style="font-size:10px;background:#f44336;color:#fff;border-radius:3px;padding:1px 4px;margin-left:4px;">required</span>
                     <% end %>
+                    <% if consistency[:mixed] %>
+                      <span style="font-size:10px;background:#ff9800;color:#fff;border-radius:3px;padding:1px 4px;margin-left:4px;"
+                            title="Configured differently across the checked projects - left blank so saving won't overwrite it with a guess. Check the single-project panel for each project's actual state.">mixed</span>
+                    <% end %>
                   </td>
                   <td>
                     <select class="tfc-bulk-cf-after" data-tracker-id="<%= tid %>" data-cf-id="<%= cf.id %>" onchange="tfcBulkSync()">
                       <option value="">-- choose a standard field --</option>
                       <% std_fields.each do |f| %>
-                        <option value="<%= f[:key] %>"><%= l(f[:label_key]) %></option>
+                        <option value="<%= f[:key] %>" <%= 'selected' if consistency[:value] == f[:key] %>><%= l(f[:label_key]) %></option>
                       <% end %>
                     </select>
                   </td>
