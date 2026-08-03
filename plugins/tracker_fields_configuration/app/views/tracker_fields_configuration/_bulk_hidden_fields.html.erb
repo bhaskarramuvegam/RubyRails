@@ -1,0 +1,159 @@
+<%#
+  Bulk multi-project hide/unhide panel. Same model as _bulk_fields.html.erb:
+  shows the UNION of trackers enabled on any checked project, no name=
+  attributes on standard/custom checkboxes, always starts unchecked. The
+  settings page's JS (tfcBulkHideSync) mirrors the visible checkboxes into
+  real settings[project_tracker_hidden_fields][...] inputs per checked
+  project that actually has that tracker. Saving overwrites those
+  projects' hidden fields for the trackers shown here.
+
+  "Other fields" (non-CustomField plugin fields like Agile's Sprint) ARE
+  editable here too: already-registered fields (unioned across the
+  applicable projects) get a normal toggle checkbox scoped to just the
+  projects that have them registered, and a "+ Add" form registers a new
+  one across every applicable checked project at once. New registrations
+  are written directly (real name= inputs, not shadow-synced) via
+  tfcBulkHideAddExtra in the main settings page's script, into a
+  persistent container that survives this panel being refetched.
+%>
+<% if trackers.empty? %>
+  <p class="tfc-no-trackers">None of the checked projects have any trackers enabled.</p>
+<% else %>
+  <p class="tfc-hint" style="margin-bottom:10px;">
+    Saving will overwrite the hidden-fields configuration for every project checked above, for
+    each tracker shown below.
+  </p>
+  <% trackers.each do |tracker| %>
+    <%
+      tid = tracker.id
+      applicable_ids = TrackerFieldsConfiguration.project_ids_with_tracker(project_ids, tid)
+      std_fields = TrackerFieldsConfiguration.standard_fields_for_tracker(tracker)
+      custom_fields = tracker.custom_fields.order(:position, :name).to_a
+      extra_union = TrackerFieldsConfiguration.extra_fields_union(applicable_ids, tid)
+    %>
+    <div class="tfc-tracker" id="tfc-bulkhide-tracker-<%= tid %>"
+         data-tracker-id="<%= tid %>" data-applicable-projects="<%= applicable_ids.join(',') %>">
+      <%# Carry forward every applicable project's full extra-field CATALOG
+          (key+label registrations) untouched - this panel can toggle
+          hidden state and add new registrations, but never silently drops
+          an existing registration. %>
+      <% applicable_ids.each do |applicable_pid| %>
+        <% TrackerFieldsConfiguration.extra_fields_for(applicable_pid, tid).each do |ef| %>
+          <input type="hidden" name="settings[project_tracker_extra_fields][<%= applicable_pid %>][<%= tid %>][]" value="<%= ef[:key] %>">
+          <input type="hidden" name="settings[project_tracker_extra_field_labels][<%= applicable_pid %>][<%= tid %>][<%= ef[:key] %>]" value="<%= ef[:label] %>">
+        <% end %>
+      <% end %>
+      <div class="tfc-tracker-hd" onclick="tfcBulkHideToggleTracker(<%= tid %>)">
+        <span>
+          <%= tracker.name %>
+          <span style="color:#888;font-weight:normal;font-size:11px;">
+            (applies to <%= applicable_ids.size %> of <%= project_ids.size %> checked project<%= project_ids.size == 1 ? '' : 's' %>)
+          </span>
+        </span>
+        <span class="tfc-arrow" id="tfc-bulkhide-arrow-<%= tid %>">&#9660;</span>
+      </div>
+
+      <div class="tfc-tracker-bd" id="tfc-bulkhide-body-<%= tid %>">
+        <% if std_fields.empty? && custom_fields.empty? %>
+          <p class="tfc-no-trackers">This tracker has no standard or custom fields.</p>
+        <% else %>
+          <table class="tfc-field-table">
+            <thead>
+              <tr>
+                <th style="width:36px;"></th>
+                <th>Field</th>
+                <th style="width:90px;">Type</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% std_fields.each do |f| %>
+                <tr>
+                  <td>
+                    <input type="checkbox" class="tfc-bulkhide-checkbox"
+                           data-tracker-id="<%= tid %>" data-field-key="std_<%= f[:key] %>" onchange="tfcBulkHideSync()">
+                  </td>
+                  <td><%= l(f[:label_key]) %></td>
+                  <td style="color:#888;font-size:11px;">Standard</td>
+                </tr>
+              <% end %>
+              <% custom_fields.each do |cf| %>
+                <tr>
+                  <td>
+                    <input type="checkbox" class="tfc-bulkhide-checkbox"
+                           data-tracker-id="<%= tid %>" data-field-key="cf_<%= cf.id %>" onchange="tfcBulkHideSync()">
+                  </td>
+                  <td>
+                    <%= cf.name %>
+                    <% if cf.is_required %>
+                      <span style="font-size:10px;background:#f44336;color:#fff;border-radius:3px;padding:1px 4px;margin-left:4px;">required</span>
+                    <% end %>
+                  </td>
+                  <td style="color:#888;font-size:11px;">Custom</td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        <% end %>
+
+        <%# ═══════════════════════════════════════════════════════════════
+            Other fields - union of already-registered non-CustomField
+            plugin fields across the applicable projects, plus a form to
+            register a new one across all of them at once.
+            ═══════════════════════════════════════════════════════════════ %>
+        <div class="tfc-extra-fields" id="tfc-bulkhide-extra-<%= tid %>">
+          <p style="margin:16px 0 8px;font-weight:bold;font-size:12px;color:#555;border-top:1px solid #eee;padding-top:12px;">
+            Other fields (from other plugins, e.g. Agile "Sprint")
+          </p>
+          <% if extra_union.any? %>
+            <table class="tfc-field-table">
+              <thead>
+                <tr>
+                  <th style="width:36px;"></th>
+                  <th>Field</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% extra_union.each do |ef| %>
+                  <%
+                    owning_ids = TrackerFieldsConfiguration.project_ids_with_extra_field(applicable_ids, tid, ef[:key])
+                  %>
+                  <tr>
+                    <td>
+                      <input type="checkbox" class="tfc-bulkhide-checkbox"
+                             data-tracker-id="<%= tid %>" data-field-key="ext_<%= ef[:key] %>"
+                             data-applicable-projects="<%= owning_ids.join(',') %>" onchange="tfcBulkHideSync()">
+                    </td>
+                    <td>
+                      <%= ef[:label] %>
+                      <span style="color:#888;font-size:11px;">
+                        (registered on <%= owning_ids.size %> of <%= applicable_ids.size %> applicable project<%= applicable_ids.size == 1 ? '' : 's' %>)
+                      </span>
+                    </td>
+                  </tr>
+                <% end %>
+              </tbody>
+            </table>
+          <% else %>
+            <p class="tfc-no-trackers">No other-plugin fields registered on any checked project for this tracker yet.</p>
+          <% end %>
+
+          <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap;">
+            <input type="text" id="tfc-bulkhide-extra-label-<%= tid %>" placeholder="Label (e.g. Sprint)"
+                   style="flex:1;min-width:140px;padding:5px 7px;font-size:12px;border:1px solid #ccc;border-radius:3px;">
+            <input type="text" id="tfc-bulkhide-extra-key-<%= tid %>"
+                   placeholder="Element id after &quot;issue_&quot; (e.g. agile_data_attributes_agile_sprint_id)"
+                   style="flex:2;min-width:220px;padding:5px 7px;font-size:12px;border:1px solid #ccc;border-radius:3px;">
+            <button type="button" class="tfc-add-btn"
+                    onclick="tfcBulkHideAddExtra(<%= tid %>, '<%= applicable_ids.join(',') %>')">+ Add to all checked projects</button>
+          </div>
+          <p class="tfc-hint">
+            Registers and hides this field for every checked project that has this tracker
+            (<%= applicable_ids.size %> project<%= applicable_ids.size == 1 ? '' : 's' %> right now). Takes effect once you save.
+            Add fields before changing which projects are checked above, or re-add if the tree
+            selection changes afterward.
+          </p>
+        </div>
+      </div>
+    </div>
+  <% end %>
+<% end %>

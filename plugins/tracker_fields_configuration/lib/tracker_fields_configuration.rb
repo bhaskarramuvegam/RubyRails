@@ -87,6 +87,29 @@ module TrackerFieldsConfiguration
     end
   end
 
+  # Every tracker enabled on at least one of the given projects (the
+  # "union"), ordered the same way as everywhere else in this plugin. Used
+  # by the bulk multi-project configuration panel: an admin can check a
+  # parent project and all its sub-projects at once, and this determines
+  # which trackers/fields are even relevant to show for that whole set.
+  def self.trackers_for_projects(project_ids)
+    ids = Array(project_ids).map(&:to_i).uniq
+    return Tracker.none if ids.empty?
+
+    Tracker.joins(:projects).where(projects: { id: ids }).distinct.order(:position, :name)
+  end
+
+  # Project ids (as strings) among the given project_ids that actually have
+  # the given tracker enabled. Used so the bulk panel only writes a
+  # tracker's rule into projects that actually have that tracker, even
+  # though the tracker was shown because SOME other checked project has it.
+  def self.project_ids_with_tracker(project_ids, tracker_id)
+    ids = Array(project_ids).map(&:to_i).uniq
+    return [] if ids.empty?
+
+    Project.joins(:trackers).where(id: ids, trackers: { id: tracker_id }).pluck(:id).map(&:to_s)
+  end
+
   # Custom field ids (as strings) promoted for this project + tracker,
   # in the order they were configured.
   def self.selected_field_ids(project_id, tracker_id)
@@ -215,5 +238,33 @@ module TrackerFieldsConfiguration
 
       acc[tracker_id] = fields.each_with_object({}) { |f, h| h[f[:key]] = f[:label] }
     end
+  end
+
+  # Union of registered extra fields (key + label) across the given
+  # projects, for one tracker. Used by the bulk hide/unhide panel so an
+  # already-registered field (e.g. Sprint, registered on one project) can
+  # be toggled hidden/unhidden across every checked project that also has
+  # it registered. If two projects registered the same key with different
+  # labels, whichever project is listed first wins - registrations are
+  # expected to describe the same underlying field consistently.
+  def self.extra_fields_union(project_ids, tracker_id)
+    seen = {}
+    ordered_keys = []
+    Array(project_ids).each do |project_id|
+      extra_fields_for(project_id, tracker_id).each do |f|
+        next if seen.key?(f[:key])
+
+        seen[f[:key]] = f[:label]
+        ordered_keys << f[:key]
+      end
+    end
+    ordered_keys.map { |k| { key: k, label: seen[k] } }
+  end
+
+  # Among the given projects, which ones have this exact extra field key
+  # registered for this tracker - so a bulk hide/unhide toggle only ever
+  # writes into projects that actually have that field.
+  def self.project_ids_with_extra_field(project_ids, tracker_id, key)
+    Array(project_ids).select { |pid| extra_field_keys(pid, tracker_id).include?(key.to_s) }
   end
 end

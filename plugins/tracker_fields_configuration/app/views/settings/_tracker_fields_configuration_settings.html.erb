@@ -56,14 +56,68 @@
   </div>
 </div>
 
+<style>
+.tfc-mode-toggle    { display:flex; gap:8px; margin-bottom:14px; }
+.tfc-mode-btn       { padding:6px 14px; font-size:12px; border:1px solid #ccc; border-radius:4px;
+                      background:#fff; cursor:pointer; }
+.tfc-mode-btn.tfc-mode-btn-active { background:#1976D2; color:#fff; border-color:#1976D2; }
+.tfc-mode-panel     { display:none; }
+.tfc-mode-panel.tfc-mode-active { display:block; }
+
+.tfc-tree           { max-height:320px; overflow-y:auto; border:1px solid #ddd; border-radius:4px;
+                      padding:8px 10px; background:#fff; margin-bottom:12px; }
+.tfc-tree-row       { padding:3px 0; font-size:13px; white-space:nowrap; }
+.tfc-tree-row label { font-weight:normal; cursor:pointer; }
+.tfc-tree-row input[type=checkbox] { margin-right:6px; vertical-align:middle; }
+</style>
+
+<%# ═══════════════════════════════════════════════════════════════════════════
+    Project tree data shared by both Section 2 and Section 3's "configure
+    multiple projects" mode below. Computed once, here, from the nested
+    set's own lft/rgt boundaries (Project.active.sorted already returns
+    rows in depth-first order) so no N+1 ancestor/descendant queries are
+    needed per project.
+    ═══════════════════════════════════════════════════════════════════════════ %>
+<%
+  tfc_all_projects = Project.active.sorted.to_a
+  tfc_active_ids = tfc_all_projects.map(&:id)
+
+  tfc_level_stack = []
+  tfc_project_tree = tfc_all_projects.map do |p|
+    tfc_level_stack.pop while tfc_level_stack.any? && tfc_level_stack.last < p.lft
+    level = tfc_level_stack.size
+    tfc_level_stack.push(p.rgt)
+    parent_id = (p.parent_id && tfc_active_ids.include?(p.parent_id)) ? p.parent_id : nil
+    { id: p.id, name: p.name, level: level, parent_id: parent_id }
+  end
+
+  tfc_children_by_parent = Hash.new { |h, k| h[k] = [] }
+  tfc_project_tree.each { |node| tfc_children_by_parent[node[:parent_id]] << node[:id] if node[:parent_id] }
+
+  tfc_descendants_by_id = {}
+  tfc_project_tree.each do |node|
+    acc = []
+    stack = tfc_children_by_parent[node[:id]].dup
+    until stack.empty?
+      cid = stack.shift
+      acc << cid
+      stack.concat(tfc_children_by_parent[cid])
+    end
+    tfc_descendants_by_id[node[:id]] = acc
+  end
+%>
+
 <%# ═══════════════════════════════════════════════════════════════════════════
     SECTION 2 - Per-project field promotion
-    Only the project list is loaded up front (cheap - id/name only). Each
-    project's tracker/custom-field table is fetched on demand when picked
-    from the dropdown, and then cached in the DOM so switching back to an
-    already-visited project doesn't re-fetch or lose edits. This avoids
-    rendering every project's full matrix at once, which is too large a
-    page for the browser on instances with many custom fields per tracker.
+    Two modes, toggled by the buttons below, sharing the same settings keys:
+    - "Configure one project" (default): the original flow, completely
+      unchanged - project list loaded up front (cheap - id/name only),
+      each project's tracker/custom-field table fetched on demand and
+      cached in the DOM. Untouched because it's already working.
+    - "Configure multiple projects": NEW - a checkbox tree (checking a
+      parent auto-checks all its sub-projects) drives a bulk panel showing
+      the union of trackers across every checked project; saving
+      overwrites those projects' configuration for the trackers shown.
     ═══════════════════════════════════════════════════════════════════════════ %>
 <%
   tfc_projects = Project.active.sorted.pluck(:id, :name)
@@ -72,12 +126,21 @@
   <div class="tfc-box-head">Move Custom Fields to Standard Fields Area</div>
   <div class="tfc-box-body">
     <p style="margin:0 0 14px;color:#555;font-size:13px;">
-      Pick a project below, then for each of its trackers choose which custom fields should be
-      promoted into the standard fields area of the issue form, and which standard field each one
-      should appear directly after. The lists of projects, trackers and custom fields are always
-      read live from this Redmine instance.
+      For each tracker, choose which custom fields should be promoted into the standard fields
+      area of the issue form, and which standard field each one should appear directly after. The
+      lists of projects, trackers and custom fields are always read live from this Redmine
+      instance.
     </p>
 
+    <div id="tfc-promote-modes">
+      <div class="tfc-mode-toggle">
+        <button type="button" class="tfc-mode-btn tfc-mode-btn-active" data-mode="single"
+                onclick="tfcSwitchMode('tfc-promote-modes', 'single')">Configure one project</button>
+        <button type="button" class="tfc-mode-btn" data-mode="bulk"
+                onclick="tfcSwitchMode('tfc-promote-modes', 'bulk')">Configure multiple projects</button>
+      </div>
+
+      <div class="tfc-mode-panel tfc-mode-active" data-mode="single">
     <% if tfc_projects.empty? %>
       <p class="tfc-no-projects">No active projects found in this Redmine instance.</p>
     <% else %>
@@ -129,6 +192,41 @@
         <% end %>
       </div>
     <% end %>
+      </div>
+
+      <%# ═══════════════════════════════════════════════════════════════════
+          "Configure multiple projects" mode - checkbox tree + bulk panel.
+          The bulk panel and its shadow-form container are populated
+          entirely by JS (tfcPromoteLoadBulkPanel / tfcBulkSync below); no
+          settings[...] names are rendered server-side here.
+          ═══════════════════════════════════════════════════════════════════ %>
+      <div class="tfc-mode-panel" data-mode="bulk">
+        <p class="tfc-hint" style="margin-bottom:8px;">
+          Check a project to select it, or check a parent project to also select all of its
+          sub-projects. Configure the fields below once, then save to apply that configuration to
+          every checked project.
+        </p>
+        <div class="tfc-tree" id="tfc-ptree-container">
+          <% tfc_project_tree.each do |node| %>
+            <div class="tfc-tree-row" style="padding-left:<%= node[:level] * 18 %>px;">
+              <label>
+                <input type="checkbox" class="tfc-tree-cb" id="tfc-ptree-cb-<%= node[:id] %>"
+                       data-project-id="<%= node[:id] %>"
+                       data-parent-id="<%= node[:parent_id] %>"
+                       data-descendants="<%= tfc_descendants_by_id[node[:id]].join(',') %>"
+                       onchange="tfcTreeToggle('tfc-ptree', this, tfcPromoteSelectionChanged)">
+                <%= node[:name] %>
+              </label>
+            </div>
+          <% end %>
+        </div>
+
+        <div id="tfc-bulk-panel">
+          <p class="tfc-hint">Check one or more projects above to configure their fields.</p>
+        </div>
+        <div id="tfc-bulk-shadow" style="display:none;"></div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -149,12 +247,25 @@
   <div class="tfc-box-head">Hide / Unhide Fields</div>
   <div class="tfc-box-body">
     <p style="margin:0 0 14px;color:#555;font-size:13px;">
-      Pick a project below, then for each of its trackers choose which fields (standard or
-      custom) should be completely hidden from both the issue form and the issue view page.
-      This is independent of the field-promotion settings above - hiding a field here works
-      whether or not it's also configured to be promoted.
+      For each tracker, choose which fields (standard or custom) should be completely hidden from
+      both the issue form and the issue view page. This is independent of the field-promotion
+      settings above - hiding a field here works whether or not it's also configured to be
+      promoted.
     </p>
 
+    <div id="tfc-hide-modes">
+      <div class="tfc-mode-toggle">
+        <button type="button" class="tfc-mode-btn tfc-mode-btn-active" data-mode="single"
+                onclick="tfcSwitchMode('tfc-hide-modes', 'single')">Configure one project</button>
+        <button type="button" class="tfc-mode-btn" data-mode="bulk"
+                onclick="tfcSwitchMode('tfc-hide-modes', 'bulk')">Configure multiple projects</button>
+      </div>
+
+      <div class="tfc-mode-panel tfc-mode-active" data-mode="single">
+        <p class="tfc-hint" style="margin-bottom:8px;">
+          Also the only place to register fields from other plugins (e.g. Agile "Sprint") - see
+          "Other fields" under each tracker below.
+        </p>
     <% if tfc_hide_projects.empty? %>
       <p class="tfc-no-projects">No active projects found in this Redmine instance.</p>
     <% else %>
@@ -216,12 +327,56 @@
         <% end %>
       </div>
     <% end %>
+      </div>
+
+      <%# ═══════════════════════════════════════════════════════════════════
+          "Configure multiple projects" mode. No "Other fields" support here
+          deliberately - registering a plugin field is inherently a
+          per-project+tracker action, so it stays on the single-project
+          panel above. Any already-registered extra fields' hidden state is
+          preserved untouched by the bulk save (see _bulk_hidden_fields).
+          ═══════════════════════════════════════════════════════════════════ %>
+      <div class="tfc-mode-panel" data-mode="bulk">
+        <p class="tfc-hint" style="margin-bottom:8px;">
+          Check a project to select it, or check a parent project to also select all of its
+          sub-projects. Configure the fields below once, then save to apply that configuration to
+          every checked project.
+        </p>
+        <div class="tfc-tree" id="tfc-htree-container">
+          <% tfc_project_tree.each do |node| %>
+            <div class="tfc-tree-row" style="padding-left:<%= node[:level] * 18 %>px;">
+              <label>
+                <input type="checkbox" class="tfc-tree-cb" id="tfc-htree-cb-<%= node[:id] %>"
+                       data-project-id="<%= node[:id] %>"
+                       data-parent-id="<%= node[:parent_id] %>"
+                       data-descendants="<%= tfc_descendants_by_id[node[:id]].join(',') %>"
+                       onchange="tfcTreeToggle('tfc-htree', this, tfcHideBulkSelectionChanged)">
+                <%= node[:name] %>
+              </label>
+            </div>
+          <% end %>
+        </div>
+
+        <div id="tfc-bulkhide-panel">
+          <p class="tfc-hint">Check one or more projects above to configure their fields.</p>
+        </div>
+        <div id="tfc-bulkhide-shadow" style="display:none;"></div>
+        <%# Holds real settings[...] inputs for "Other fields" registered via
+            tfcBulkHideAddExtra below. Lives outside #tfc-bulkhide-panel so a
+            later tree-selection change (which refetches and replaces that
+            panel's whole innerHTML) never wipes an addition made earlier in
+            this session. %>
+        <div id="tfc-bulkhide-extra-additions" style="display:none;"></div>
+      </div>
+    </div>
   </div>
 </div>
 
 <script>
 var TFC_FIELDS_URL = "<%= j tracker_fields_configuration_project_fields_path %>";
 var TFC_HIDDEN_FIELDS_URL = "<%= j tracker_fields_configuration_project_hidden_fields_path %>";
+var TFC_BULK_FIELDS_URL = "<%= j tracker_fields_configuration_bulk_fields_path %>";
+var TFC_BULK_HIDDEN_FIELDS_URL = "<%= j tracker_fields_configuration_bulk_hidden_fields_path %>";
 </script>
 
 <script>
@@ -413,5 +568,311 @@ function tfcHideRemoveExtra(key, fieldKeyRaw) {
   var row = document.getElementById('tfc-extra-row-' + key + '-' + fieldKeyRaw);
   if (row) row.remove();
   tfcHideUpdateCount(key);
+}
+</script>
+
+<%# ═══════════════════════════════════════════════════════════════════════════
+    "Configure multiple projects" mode - shared tree logic plus the two
+    bulk panels (promote / hide). Entirely new script block, appended
+    after everything above rather than edited into it, so the
+    already-working single-project flows in both sections are untouched
+    byte-for-byte.
+    ═══════════════════════════════════════════════════════════════════════════ %>
+<script>
+/* ── Generic checkbox-tree cascade, shared by both sections ────────────── */
+/* prefix is either 'tfc-ptree' (promote) or 'tfc-htree' (hide); each tree's
+   checkboxes have id="<prefix>-cb-<projectId>" and carry data-project-id /
+   data-parent-id / data-descendants attributes rendered server-side. */
+
+function tfcTreeContainer(prefix) {
+  return document.getElementById(prefix + '-container');
+}
+
+function tfcTreeCheckedIds(prefix) {
+  var container = tfcTreeContainer(prefix);
+  var ids = [];
+  if (!container) return ids;
+  container.querySelectorAll('.tfc-tree-cb').forEach(function(cb) {
+    if (cb.checked) ids.push(cb.dataset.projectId);
+  });
+  return ids;
+}
+
+function tfcTreeCascadeDown(prefix, cb) {
+  var ids = (cb.dataset.descendants || '').split(',').filter(Boolean);
+  ids.forEach(function(id) {
+    var child = document.getElementById(prefix + '-cb-' + id);
+    if (child) { child.checked = cb.checked; child.indeterminate = false; }
+  });
+}
+
+function tfcTreeRefreshAncestors(prefix, cb) {
+  var parentId = cb.dataset.parentId;
+  while (parentId) {
+    var parentCb = document.getElementById(prefix + '-cb-' + parentId);
+    if (!parentCb) break;
+
+    var descIds = (parentCb.dataset.descendants || '').split(',').filter(Boolean);
+    var states = descIds.map(function(id) {
+      var el = document.getElementById(prefix + '-cb-' + id);
+      return el ? el.checked : false;
+    });
+    var anyChecked = states.some(function(s) { return s; });
+    var allChecked = states.length > 0 && states.every(function(s) { return s; });
+
+    parentCb.checked = allChecked;
+    parentCb.indeterminate = anyChecked && !allChecked;
+    parentId = parentCb.dataset.parentId;
+  }
+}
+
+/* Called by each tree checkbox's onchange. onSelectionChanged is the
+   section-specific function that reloads that section's bulk panel. */
+function tfcTreeToggle(prefix, cb, onSelectionChanged) {
+  cb.indeterminate = false;
+  tfcTreeCascadeDown(prefix, cb);
+  tfcTreeRefreshAncestors(prefix, cb);
+  onSelectionChanged();
+}
+
+/* ── Mode toggle (Configure one project / Configure multiple projects) ── */
+function tfcSwitchMode(containerId, mode) {
+  var container = document.getElementById(containerId);
+  if (!container) return;
+  container.querySelectorAll('.tfc-mode-panel').forEach(function(panel) {
+    panel.classList.toggle('tfc-mode-active', panel.dataset.mode === mode);
+  });
+  container.querySelectorAll('.tfc-mode-btn').forEach(function(btn) {
+    btn.classList.toggle('tfc-mode-btn-active', btn.dataset.mode === mode);
+  });
+}
+
+/* ── Bulk field promotion ─────────────────────────────────────────────── */
+var tfcBulkFetchTimer = null;
+
+function tfcPromoteSelectionChanged() {
+  clearTimeout(tfcBulkFetchTimer);
+  tfcBulkFetchTimer = setTimeout(tfcPromoteLoadBulkPanel, 250);
+}
+
+function tfcPromoteLoadBulkPanel() {
+  var ids = tfcTreeCheckedIds('tfc-ptree');
+  var panel = document.getElementById('tfc-bulk-panel');
+  if (!panel) return;
+
+  // A checked project's existing config is about to be fully replaced by
+  // whatever this panel ends up showing - stop submitting its preserved
+  // (as-is) fields. Unchecking a project re-enables its preserved fields
+  // so its prior configuration is kept exactly as it was.
+  document.querySelectorAll('.tfc-preserve').forEach(function(el) { el.disabled = false; });
+  ids.forEach(function(pid) {
+    document.querySelectorAll('.tfc-preserve-' + pid).forEach(function(el) { el.disabled = true; });
+  });
+
+  if (ids.length === 0) {
+    panel.innerHTML = '<p class="tfc-hint">Check one or more projects above to configure their fields.</p>';
+    tfcBulkSync();
+    return;
+  }
+
+  panel.innerHTML = '<p class="tfc-loading">Loading fields&hellip;</p>';
+  var qs = ids.map(function(id) { return 'project_ids[]=' + encodeURIComponent(id); }).join('&');
+
+  fetch(TFC_BULK_FIELDS_URL + '?' + qs, {
+    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    credentials: 'same-origin'
+  }).then(function(response) {
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    return response.text();
+  }).then(function(html) {
+    panel.innerHTML = html;
+    tfcBulkSync();
+  }).catch(function(err) {
+    panel.innerHTML = '<p class="tfc-load-error">Could not load fields: ' + err.message + '</p>';
+  });
+}
+
+/* Mirrors the bulk panel's visible checkbox/select state into real
+   settings[project_tracker_fields][pid][tid][] / settings[project_tracker_after]
+   hidden inputs, once per project that actually has that tracker
+   (data-applicable-projects, rendered server-side). Re-run on every
+   checkbox/select change inside the panel and every time it's reloaded. */
+function tfcBulkSync() {
+  var shadow = document.getElementById('tfc-bulk-shadow');
+  var panel = document.getElementById('tfc-bulk-panel');
+  if (!shadow) return;
+  if (!panel) { shadow.innerHTML = ''; return; }
+
+  var html = '';
+  panel.querySelectorAll('.tfc-tracker[data-tracker-id]').forEach(function(trackerEl) {
+    var tid = trackerEl.dataset.trackerId;
+    var applicable = (trackerEl.dataset.applicableProjects || '').split(',').filter(Boolean);
+    if (!applicable.length) return;
+
+    trackerEl.querySelectorAll('.tfc-bulk-cf-checkbox:checked').forEach(function(cb) {
+      var cfId = cb.dataset.cfId;
+      var afterSelect = trackerEl.querySelector('.tfc-bulk-cf-after[data-cf-id="' + cfId + '"]');
+      var afterVal = afterSelect ? afterSelect.value : '';
+      if (!afterVal) return; // same rule as the single-project panel
+
+      applicable.forEach(function(pid) {
+        html += '<input type="hidden" name="settings[project_tracker_fields][' + pid + '][' + tid + '][]" value="' + tfcHideEsc(cfId) + '">';
+        html += '<input type="hidden" name="settings[project_tracker_after][' + pid + '][' + tid + '][' + tfcHideEsc(cfId) + ']" value="' + tfcHideEsc(afterVal) + '">';
+      });
+    });
+  });
+
+  shadow.innerHTML = html;
+}
+
+function tfcBulkToggleTracker(tid) {
+  var body  = document.getElementById('tfc-bulk-body-'  + tid);
+  var arrow = document.getElementById('tfc-bulk-arrow-' + tid);
+  if (!body) return;
+  if (body.classList.contains('tfc-open')) {
+    body.classList.remove('tfc-open');
+    arrow.innerHTML = '&#9660;';
+  } else {
+    body.classList.add('tfc-open');
+    arrow.innerHTML = '&#9650;';
+  }
+}
+
+/* ── Bulk hide/unhide ─────────────────────────────────────────────────── */
+var tfcBulkHideFetchTimer = null;
+
+function tfcHideBulkSelectionChanged() {
+  clearTimeout(tfcBulkHideFetchTimer);
+  tfcBulkHideFetchTimer = setTimeout(tfcHideBulkLoadPanel, 250);
+}
+
+function tfcHideBulkLoadPanel() {
+  var ids = tfcTreeCheckedIds('tfc-htree');
+  var panel = document.getElementById('tfc-bulkhide-panel');
+  if (!panel) return;
+
+  document.querySelectorAll('.tfc-hide-preserve').forEach(function(el) { el.disabled = false; });
+  ids.forEach(function(pid) {
+    document.querySelectorAll('.tfc-hide-preserve-' + pid).forEach(function(el) { el.disabled = true; });
+  });
+
+  if (ids.length === 0) {
+    panel.innerHTML = '<p class="tfc-hint">Check one or more projects above to configure their fields.</p>';
+    tfcBulkHideSync();
+    return;
+  }
+
+  panel.innerHTML = '<p class="tfc-loading">Loading fields&hellip;</p>';
+  var qs = ids.map(function(id) { return 'project_ids[]=' + encodeURIComponent(id); }).join('&');
+
+  fetch(TFC_BULK_HIDDEN_FIELDS_URL + '?' + qs, {
+    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    credentials: 'same-origin'
+  }).then(function(response) {
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    return response.text();
+  }).then(function(html) {
+    panel.innerHTML = html;
+    tfcBulkHideSync();
+  }).catch(function(err) {
+    panel.innerHTML = '<p class="tfc-load-error">Could not load fields: ' + err.message + '</p>';
+  });
+}
+
+function tfcBulkHideSync() {
+  var shadow = document.getElementById('tfc-bulkhide-shadow');
+  var panel = document.getElementById('tfc-bulkhide-panel');
+  if (!shadow) return;
+  if (!panel) { shadow.innerHTML = ''; return; }
+
+  var html = '';
+  panel.querySelectorAll('.tfc-tracker[data-tracker-id]').forEach(function(trackerEl) {
+    var tid = trackerEl.dataset.trackerId;
+    var applicable = (trackerEl.dataset.applicableProjects || '').split(',').filter(Boolean);
+    if (!applicable.length) return;
+
+    trackerEl.querySelectorAll('.tfc-bulkhide-checkbox:checked').forEach(function(cb) {
+      var fieldKey = cb.dataset.fieldKey;
+      applicable.forEach(function(pid) {
+        html += '<input type="hidden" name="settings[project_tracker_hidden_fields][' + pid + '][' + tid + '][]" value="' + tfcHideEsc(fieldKey) + '">';
+      });
+    });
+  });
+
+  shadow.innerHTML = html;
+}
+
+function tfcBulkHideToggleTracker(tid) {
+  var body  = document.getElementById('tfc-bulkhide-body-'  + tid);
+  var arrow = document.getElementById('tfc-bulkhide-arrow-' + tid);
+  if (!body) return;
+  if (body.classList.contains('tfc-open')) {
+    body.classList.remove('tfc-open');
+    arrow.innerHTML = '&#9660;';
+  } else {
+    body.classList.add('tfc-open');
+    arrow.innerHTML = '&#9650;';
+  }
+}
+
+/* Registers a new "Other fields" entry (e.g. Agile Sprint) across every
+   applicable checked project for one tracker, in bulk mode. Unlike the
+   std_/cf_ checkboxes, this does NOT go through tfcBulkHideSync's
+   rebuild-from-scratch pass - it writes real settings[...] inputs
+   directly into the persistent #tfc-bulkhide-extra-additions container
+   (a sibling of #tfc-bulkhide-panel, so refetching the panel on further
+   tree changes can't wipe it), and registers + hides the field in one
+   step, matching the single-project panel's "newly added = hidden by
+   default" behavior. */
+function tfcBulkHideAddExtra(tid, applicableIdsCsv) {
+  var labelInput = document.getElementById('tfc-bulkhide-extra-label-' + tid);
+  var keyInput = document.getElementById('tfc-bulkhide-extra-key-' + tid);
+  var label = labelInput.value.trim();
+  var keyRaw = keyInput.value.trim().replace(/^issue_/, '');
+
+  if (!label || !keyRaw) {
+    alert('Please enter both a label and an id.');
+    return;
+  }
+
+  var pids = (applicableIdsCsv || '').split(',').filter(Boolean);
+  if (!pids.length) {
+    alert('No checked projects have this tracker.');
+    return;
+  }
+
+  var groupId = 'tfc-bulkhide-addition-' + tid + '-' + keyRaw;
+  if (document.getElementById(groupId)) {
+    alert('That field was already added in this session.');
+    return;
+  }
+
+  var additions = document.getElementById('tfc-bulkhide-extra-additions');
+  var html = '<div id="' + tfcHideEsc(groupId) + '">';
+  pids.forEach(function(pid) {
+    html += '<input type="hidden" name="settings[project_tracker_extra_fields][' + pid + '][' + tid + '][]" value="' + tfcHideEsc(keyRaw) + '">';
+    html += '<input type="hidden" name="settings[project_tracker_extra_field_labels][' + pid + '][' + tid + '][' + tfcHideEsc(keyRaw) + ']" value="' + tfcHideEsc(label) + '">';
+    html += '<input type="hidden" name="settings[project_tracker_hidden_fields][' + pid + '][' + tid + '][]" value="ext_' + tfcHideEsc(keyRaw) + '">';
+  });
+  html += '</div>';
+  additions.insertAdjacentHTML('beforeend', html);
+
+  var extraBox = document.getElementById('tfc-bulkhide-extra-' + tid);
+  if (extraBox) {
+    var row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;font-size:12px;color:#2e7d32;margin-top:8px;';
+    row.innerHTML = 'Added &amp; hidden "' + tfcHideEsc(label) + '" for ' + pids.length +
+      ' project' + (pids.length === 1 ? '' : 's') + ' (takes effect after you save) ' +
+      '<button type="button" class="tfc-add-btn" style="background:#9e9e9e;padding:2px 8px;font-size:11px;">Undo</button>';
+    row.querySelector('button').addEventListener('click', function() {
+      var group = document.getElementById(groupId);
+      if (group) group.remove();
+      row.remove();
+    });
+    extraBox.appendChild(row);
+  }
+
+  labelInput.value = '';
+  keyInput.value = '';
 }
 </script>

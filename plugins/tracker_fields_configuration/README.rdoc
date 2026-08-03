@@ -75,6 +75,43 @@ register one manually:
 4. Click *+ Add* - it now appears with its own checkbox, same as any
    standard or custom field.
 
+== Configuring multiple projects at once
+
+Both the field-promotion section and the hide/unhide section have a mode
+toggle at the top: *Configure one project* (the original flow, unchanged)
+or *Configure multiple projects*. The bulk mode shows a checkbox tree of
+every project - checking a parent project automatically checks (and
+visually cascades to) all of its sub-projects, matching how Windows'
+"Turn Windows features on or off" dialog behaves. The tracker/field panel
+below the tree shows the *union* of trackers enabled on any checked
+project.
+
+<b>Saving in bulk mode overwrites</b> the checked projects' configuration
+for every tracker shown in the panel - it isn't a merge. Leaving a
+tracker's fields unchecked and saving clears that tracker's configuration
+for every checked project that has it. This is intentional (it's what
+"configure once, apply to many" means), but it means you should treat the
+bulk panel as "this is what I want these trackers to look like now" rather
+than as an editor of any one project's current settings. Projects you
+don't check are left completely untouched.
+
+The hide/unhide bulk panel also handles "Other fields" (non-CustomField
+plugin fields like Agile's Sprint):
+
+* Already-registered fields show up unioned across the checked projects,
+  each as its own toggle scoped to just the projects that actually have
+  it registered - checking/unchecking one follows the same overwrite
+  rules as standard/custom fields.
+* A "+ Add to all checked projects" form registers a brand new field
+  (label + id, same as the single-project panel) across every checked
+  project that has that tracker, and hides it by default - this part
+  does *not* follow the overwrite rule; it only adds, and any project's
+  existing extra-field registrations are always carried forward
+  untouched by a bulk save.
+* Add fields before changing which projects are checked - further tree
+  changes reload the panel and the newly-added row's visual confirmation
+  goes with it, though the registration itself is still saved.
+
 == Installation
 
 No database migration is required. This plugin only uses Redmine's built-in

@@ -8,4 +8,12 @@ RedmineApp::Application.routes.draw do
   get 'tracker_fields_configuration/project_hidden_fields',
       to: 'tracker_fields_configuration#project_hidden_fields',
       as: 'tracker_fields_configuration_project_hidden_fields'
+
+  get 'tracker_fields_configuration/bulk_fields',
+      to: 'tracker_fields_configuration#bulk_fields',
+      as: 'tracker_fields_configuration_bulk_fields'
+
+  get 'tracker_fields_configuration/bulk_hidden_fields',
+      to: 'tracker_fields_configuration#bulk_hidden_fields',
+      as: 'tracker_fields_configuration_bulk_hidden_fields'
 end
