@@ -170,10 +170,17 @@
       <div id="tfc-hide-projects-container"></div>
 
       <%# Same "preserve unedited projects" safeguard as Section 2 above,
-          scoped to this feature's own settings key and its own class names
-          so it can never remove Section 2's preserved fields or vice versa. %>
+          scoped to this feature's own settings keys and its own class
+          names so it can never remove Section 2's preserved fields or vice
+          versa. Covers all three keys this section owns: which fields are
+          hidden, plus the registered extra-field catalog and its labels -
+          without preserving the latter two, saving while another
+          project's Sprint-style registrations were never loaded this
+          session would wipe them. %>
       <%
         raw_hidden_cfg = TrackerFieldsConfiguration.hash_at('project_tracker_hidden_fields')
+        raw_extra_cfg = TrackerFieldsConfiguration.hash_at('project_tracker_extra_fields')
+        raw_extra_labels_cfg = TrackerFieldsConfiguration.hash_at('project_tracker_extra_field_labels')
       %>
       <div id="tfc-hide-preserved-fields" style="display:none;">
         <% raw_hidden_cfg.each do |ppid, trackers| %>
@@ -183,6 +190,27 @@
               <input type="hidden" class="tfc-hide-preserve tfc-hide-preserve-<%= ppid %>"
                      name="settings[project_tracker_hidden_fields][<%= ppid %>][<%= ttid %>][]"
                      value="<%= field_key %>">
+            <% end %>
+          <% end %>
+        <% end %>
+        <% raw_extra_cfg.each do |ppid, trackers| %>
+          <% next unless trackers.is_a?(Hash) %>
+          <% trackers.each do |ttid, keys| %>
+            <% Array(keys).each do |extra_key| %>
+              <input type="hidden" class="tfc-hide-preserve tfc-hide-preserve-<%= ppid %>"
+                     name="settings[project_tracker_extra_fields][<%= ppid %>][<%= ttid %>][]"
+                     value="<%= extra_key %>">
+            <% end %>
+          <% end %>
+        <% end %>
+        <% raw_extra_labels_cfg.each do |ppid, trackers| %>
+          <% next unless trackers.is_a?(Hash) %>
+          <% trackers.each do |ttid, label_map| %>
+            <% next unless label_map.is_a?(Hash) %>
+            <% label_map.each do |extra_key, label| %>
+              <input type="hidden" class="tfc-hide-preserve tfc-hide-preserve-<%= ppid %>"
+                     name="settings[project_tracker_extra_field_labels][<%= ppid %>][<%= ttid %>][<%= extra_key %>]"
+                     value="<%= label %>">
             <% end %>
           <% end %>
         <% end %>
@@ -328,5 +356,62 @@ function tfcHideUpdateCount(key) {
   badge.textContent = checked;
   badge.nextElementSibling.textContent = ' / ' + body.querySelectorAll('input[type=checkbox]').length +
     ' field' + (body.querySelectorAll('input[type=checkbox]').length === 1 ? '' : 's') + ' hidden';
+}
+
+/* ── "Other fields" (non-CustomField plugin fields, e.g. Agile Sprint) ──
+   These functions live here (the fully-loaded page), not inside the
+   Ajax-fetched hide/unhide partial, because <script> tags inside HTML
+   assigned via element.innerHTML never execute - only the onclick
+   attributes in that fetched HTML reference these global functions. */
+function tfcHideEsc(str) {
+  return String(str)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function tfcHideAddExtra(pid, tid, key) {
+  var labelInput = document.getElementById('tfc-extra-label-' + key);
+  var keyInput = document.getElementById('tfc-extra-key-' + key);
+  var label = labelInput.value.trim();
+  var fieldKeyRaw = keyInput.value.trim().replace(/^issue_/, '');
+
+  if (!label || !fieldKeyRaw) {
+    alert('Please enter both a label and an id.');
+    return;
+  }
+  if (document.getElementById('tfc-extra-row-' + key + '-' + fieldKeyRaw)) {
+    alert('That field is already added.');
+    return;
+  }
+
+  var fieldKey = 'ext_' + fieldKeyRaw;
+  var cbId = 'tfc-hide-cb-' + key + '-' + fieldKey;
+
+  var emptyMsg = document.getElementById('tfc-extra-empty-' + key);
+  if (emptyMsg) emptyMsg.remove();
+
+  var tbody = document.getElementById('tfc-extra-table-' + key).querySelector('tbody');
+  var tr = document.createElement('tr');
+  tr.id = 'tfc-extra-row-' + key + '-' + fieldKeyRaw;
+  tr.innerHTML =
+    '<td><input type="checkbox" name="settings[project_tracker_hidden_fields][' + pid + '][' + tid + '][]" ' +
+    'value="' + tfcHideEsc(fieldKey) + '" id="' + tfcHideEsc(cbId) + '" checked ' +
+    'onchange="tfcHideUpdateCount(' + JSON.stringify(key) + ')"></td>' +
+    '<td><label for="' + tfcHideEsc(cbId) + '">' + tfcHideEsc(label) + '</label>' +
+    '<input type="hidden" name="settings[project_tracker_extra_fields][' + pid + '][' + tid + '][]" value="' + tfcHideEsc(fieldKeyRaw) + '">' +
+    '<input type="hidden" name="settings[project_tracker_extra_field_labels][' + pid + '][' + tid + '][' + tfcHideEsc(fieldKeyRaw) + ']" value="' + tfcHideEsc(label) + '"></td>' +
+    '<td><button type="button" class="tfc-add-btn" style="background:#e53935;padding:3px 8px;font-size:11px;" ' +
+    'onclick="tfcHideRemoveExtra(' + JSON.stringify(key) + ', ' + JSON.stringify(fieldKeyRaw) + ')">Remove</button></td>';
+  tbody.appendChild(tr);
+
+  labelInput.value = '';
+  keyInput.value = '';
+  tfcHideUpdateCount(key);
+}
+
+function tfcHideRemoveExtra(key, fieldKeyRaw) {
+  var row = document.getElementById('tfc-extra-row-' + key + '-' + fieldKeyRaw);
+  if (row) row.remove();
+  tfcHideUpdateCount(key);
 }
 </script>

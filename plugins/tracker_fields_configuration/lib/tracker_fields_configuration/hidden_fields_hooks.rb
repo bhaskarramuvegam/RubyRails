@@ -13,9 +13,11 @@
 # versa.
 #
 # Field keys are prefixed the same way tracker_popup_fields does in
-# redmine_parent_to_child_update: "cf_<id>" for a custom field, or
-# "std_<key>" for a standard field (matching TrackerFieldsConfiguration::
-# STANDARD_FIELDS' :key values).
+# redmine_parent_to_child_update: "cf_<id>" for a custom field, "std_<key>"
+# for a standard field (matching TrackerFieldsConfiguration::
+# STANDARD_FIELDS' :key values), or "ext_<key>" for an admin-registered
+# field from another plugin (e.g. Redmine Agile's Sprint field) that isn't
+# a Redmine CustomField and so can't be auto-discovered.
 module TrackerFieldsConfiguration
   class HiddenFieldsHooks < Redmine::Hook::ViewListener
     ISSUE_ACTIONS = %w[new create edit update show].freeze
@@ -36,6 +38,7 @@ module TrackerFieldsConfiguration
       label_by_key = TrackerFieldsConfiguration::STANDARD_FIELDS.each_with_object({}) do |f, acc|
         acc[f[:key]] = ::I18n.t(f[:label_key])
       end
+      extra_labels_by_tracker = TrackerFieldsConfiguration.extra_field_labels_by_tracker(issue.project_id)
 
       config_json = config.map { |tracker_id, keys|
         keys_json = keys.map { |k| k.to_s.inspect }.join(',')
@@ -44,11 +47,17 @@ module TrackerFieldsConfiguration
 
       labels_json = label_by_key.map { |k, v| "#{k.inspect}:#{v.to_s.inspect}" }.join(',')
 
+      extra_labels_json = extra_labels_by_tracker.map { |tracker_id, labels|
+        pairs = labels.map { |k, v| "#{k.to_s.inspect}:#{v.to_s.inspect}" }.join(',')
+        "#{tracker_id.to_s.inspect}:{#{pairs}}"
+      }.join(',')
+
       <<~HTML.html_safe
         <script type="text/javascript">
         (function(){
           var TFC_HIDDEN_CONFIG = {#{config_json}};
           var TFC_HIDDEN_STD_LABELS = {#{labels_json}};
+          var TFC_HIDDEN_EXTRA_LABELS = {#{extra_labels_json}};
           var TFC_HIDDEN_FALLBACK_TRACKER_ID = #{issue.tracker_id.to_i.to_s.inspect};
 
           function tfcHideCurrentTrackerId() {
@@ -69,6 +78,11 @@ module TrackerFieldsConfiguration
 
           function tfcHideFindFormRow(key) {
             if (key.indexOf('std_') === 0) {
+              return tfcHideFormRowOf(document.getElementById('issue_' + key.slice(4)));
+            }
+            if (key.indexOf('ext_') === 0) {
+              // Extra fields are matched the same way as standard fields -
+              // the admin enters the exact id suffix after "issue_".
               return tfcHideFormRowOf(document.getElementById('issue_' + key.slice(4)));
             }
             if (key.indexOf('cf_') === 0) {
@@ -101,6 +115,15 @@ module TrackerFieldsConfiguration
             }
             if (key.indexOf('std_') === 0) {
               var label = TFC_HIDDEN_STD_LABELS[key.slice(4)];
+              return label ? tfcHideFindShowRowByLabel(label) : null;
+            }
+            if (key.indexOf('ext_') === 0) {
+              // Extra fields' labels vary per tracker (admin-entered), so
+              // they're looked up per current tracker rather than from a
+              // fixed global map like TFC_HIDDEN_STD_LABELS.
+              var tid = tfcHideCurrentTrackerId();
+              var trackerLabels = TFC_HIDDEN_EXTRA_LABELS[tid] || {};
+              var label = trackerLabels[key.slice(4)];
               return label ? tfcHideFindShowRowByLabel(label) : null;
             }
             return null;

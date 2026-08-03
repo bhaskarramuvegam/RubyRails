@@ -36,7 +36,17 @@ Redmine::Plugin.register :tracker_fields_configuration do
     # Which fields are hidden entirely - a separate feature from the two
     # above, read/written independently of them.
     # Hash: project_id (string) => tracker_id (string) => [field_key (string), ...]
-    # field_key is "cf_<id>" for a custom field or "std_<key>" for a standard field.
-    'project_tracker_hidden_fields' => {}
+    # field_key is "cf_<id>" for a custom field, "std_<key>" for a standard
+    # field, or "ext_<key>" for an admin-registered field from another
+    # plugin (see project_tracker_extra_fields below).
+    'project_tracker_hidden_fields' => {},
+    # Admin-registered fields from other plugins (e.g. Redmine Agile's
+    # Sprint field) that aren't Redmine CustomFields, so can't be
+    # auto-discovered from Tracker#custom_fields like the others above.
+    # Hash: project_id (string) => tracker_id (string) => [key (string), ...]
+    'project_tracker_extra_fields' => {},
+    # Display label for each registered extra field above.
+    # Hash: project_id (string) => tracker_id (string) => { key (string) => label (string) }
+    'project_tracker_extra_field_labels' => {}
   }, partial: 'settings/tracker_fields_configuration_settings'
 end

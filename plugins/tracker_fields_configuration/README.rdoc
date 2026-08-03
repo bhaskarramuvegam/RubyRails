@@ -60,6 +60,21 @@ already has a usable default value, since the hidden input is still part
 of the form (just visually hidden) and Redmine still validates it - give
 it a sensible default before hiding it if it's required.
 
+=== Hiding fields from other plugins (e.g. Redmine Agile's "Sprint")
+
+Fields injected by other plugins (not a Redmine CustomField) can't be
+auto-discovered, so they aren't listed automatically. Instead, in the
+"Other fields" area at the bottom of each tracker's hide/unhide list, you
+register one manually:
+
+1. Right-click the field on the issue form and choose Inspect.
+2. Find its HTML +id+ attribute, e.g. <tt>id="issue_agile_data_attributes_agile_sprint_id"</tt>.
+3. Enter everything after +issue_+ as the id, and a label matching the
+   field's on-screen name exactly (this is used to find it on the show
+   page, where fields aren't identified by id).
+4. Click *+ Add* - it now appears with its own checkbox, same as any
+   standard or custom field.
+
 == Installation
 
 No database migration is required. This plugin only uses Redmine's built-in

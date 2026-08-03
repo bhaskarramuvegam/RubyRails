@@ -173,4 +173,47 @@ module TrackerFieldsConfiguration
       acc[tracker_id] = keys unless keys.empty?
     end
   end
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # Extra fields - admin-registered fields injected by OTHER plugins (e.g.
+  # Redmine Agile's Sprint field), which aren't Redmine CustomFields and so
+  # can't be auto-discovered from Tracker#custom_fields. An admin registers
+  # one by inspecting it once and entering its label + the part of its HTML
+  # id after "issue_". Registered extra fields can then be hidden the same
+  # way as standard/custom fields, using the "ext_<key>" prefix.
+  # ═══════════════════════════════════════════════════════════════════════
+
+  # Registered extra-field keys (unprefixed) for a project + tracker, in
+  # the order they were added.
+  def self.extra_field_keys(project_id, tracker_id)
+    array_at('project_tracker_extra_fields', project_id, tracker_id).map(&:to_s).uniq
+  end
+
+  def self.extra_field_label(project_id, tracker_id, key)
+    hash_at('project_tracker_extra_field_labels', project_id, tracker_id)[key.to_s].presence
+  end
+
+  # Registered extra fields for a project + tracker as an ordered array of
+  # { key:, label: }.
+  def self.extra_fields_for(project_id, tracker_id)
+    extra_field_keys(project_id, tracker_id).map do |key|
+      { key: key, label: extra_field_label(project_id, tracker_id, key) || key }
+    end
+  end
+
+  # Extra-field label lookup for every tracker configured under this
+  # project, as a Hash of tracker_id (String) => { key (String) => label
+  # (String) }. Used by the hide/unhide hook to match an extra field's row
+  # on the show page by label text, the same way it does for standard
+  # fields, since extra fields aren't in STANDARD_FIELDS and their labels
+  # vary per project/tracker rather than being fixed.
+  def self.extra_field_labels_by_tracker(project_id)
+    tracker_ids = hash_at('project_tracker_extra_fields', project_id).keys
+    tracker_ids.each_with_object({}) do |tracker_id, acc|
+      fields = extra_fields_for(project_id, tracker_id)
+      next if fields.empty?
+
+      acc[tracker_id] = fields.each_with_object({}) { |f, h| h[f[:key]] = f[:label] }
+    end
+  end
 end

@@ -12,8 +12,9 @@
       tracker_key = "#{pid}-#{tid}"
       std_fields = TrackerFieldsConfiguration.standard_fields_for_tracker(tracker)
       custom_fields = tracker.custom_fields.order(:position, :name).to_a
+      extra_fields = TrackerFieldsConfiguration.extra_fields_for(pid, tid)
       hidden_keys = TrackerFieldsConfiguration.hidden_field_keys(pid, tid)
-      total_fields = std_fields.size + custom_fields.size
+      total_fields = std_fields.size + custom_fields.size + extra_fields.size
       hidden_count = hidden_keys.size
     %>
     <div class="tfc-tracker" id="tfc-hide-tracker-<%= tracker_key %>">
@@ -29,8 +30,8 @@
       </div>
 
       <div class="tfc-tracker-bd" id="tfc-hide-body-<%= tracker_key %>">
-        <% if total_fields.zero? %>
-          <p class="tfc-no-trackers">This tracker has no fields to hide.</p>
+        <% if std_fields.empty? && custom_fields.empty? %>
+          <p class="tfc-no-trackers">This tracker has no standard or custom fields to hide.</p>
         <% else %>
           <table class="tfc-field-table">
             <thead>
@@ -89,6 +90,74 @@
             value - double-check that before hiding a required field.
           </p>
         <% end %>
+
+        <%# ═══════════════════════════════════════════════════════════════
+            Other fields - admin-registered fields from other plugins (e.g.
+            Redmine Agile's Sprint field) that aren't Redmine CustomFields
+            and so aren't in tracker.custom_fields above. Always shown,
+            regardless of whether this tracker has any standard/custom
+            fields, since a tracker can have only a plugin-injected field
+            to hide.
+            ═══════════════════════════════════════════════════════════════ %>
+        <div class="tfc-extra-fields" id="tfc-extra-<%= tracker_key %>">
+          <p style="margin:16px 0 8px;font-weight:bold;font-size:12px;color:#555;border-top:1px solid #eee;padding-top:12px;">
+            Other fields (from other plugins, e.g. Agile "Sprint")
+          </p>
+          <table class="tfc-field-table" id="tfc-extra-table-<%= tracker_key %>">
+            <thead>
+              <tr>
+                <th style="width:36px;"></th>
+                <th>Field</th>
+                <th style="width:70px;"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <% extra_fields.each do |ef| %>
+                <%
+                  field_key = "ext_#{ef[:key]}"
+                  cb_id = "tfc-hide-cb-#{tracker_key}-#{field_key}"
+                  checked = hidden_keys.include?(field_key)
+                %>
+                <tr id="tfc-extra-row-<%= tracker_key %>-<%= ef[:key] %>">
+                  <td>
+                    <%= check_box_tag "settings[project_tracker_hidden_fields][#{pid}][#{tid}][]",
+                          field_key, checked,
+                          id: cb_id,
+                          onchange: "tfcHideUpdateCount('#{tracker_key}')" %>
+                  </td>
+                  <td>
+                    <label for="<%= cb_id %>"><%= ef[:label] %></label>
+                    <input type="hidden" name="settings[project_tracker_extra_fields][<%= pid %>][<%= tid %>][]" value="<%= ef[:key] %>">
+                    <input type="hidden" name="settings[project_tracker_extra_field_labels][<%= pid %>][<%= tid %>][<%= ef[:key] %>]" value="<%= ef[:label] %>">
+                  </td>
+                  <td>
+                    <button type="button" class="tfc-add-btn" style="background:#e53935;padding:3px 8px;font-size:11px;"
+                            onclick="tfcHideRemoveExtra('<%= tracker_key %>', '<%= ef[:key] %>')">Remove</button>
+                  </td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+          <% if extra_fields.empty? %>
+            <p class="tfc-no-trackers" id="tfc-extra-empty-<%= tracker_key %>">No other-plugin fields registered yet.</p>
+          <% end %>
+
+          <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap;">
+            <input type="text" id="tfc-extra-label-<%= tracker_key %>" placeholder="Label (e.g. Sprint)"
+                   style="flex:1;min-width:140px;padding:5px 7px;font-size:12px;border:1px solid #ccc;border-radius:3px;">
+            <input type="text" id="tfc-extra-key-<%= tracker_key %>"
+                   placeholder="Element id after &quot;issue_&quot; (e.g. agile_data_attributes_agile_sprint_id)"
+                   style="flex:2;min-width:220px;padding:5px 7px;font-size:12px;border:1px solid #ccc;border-radius:3px;">
+            <button type="button" class="tfc-add-btn"
+                    onclick="tfcHideAddExtra('<%= pid %>', '<%= tid %>', '<%= tracker_key %>')">+ Add</button>
+          </div>
+          <p class="tfc-hint">
+            Right-click the field on the issue form &rarr; Inspect, find its HTML <code>id</code> (e.g.
+            <code>id="issue_agile_data_attributes_agile_sprint_id"</code>), enter everything after
+            <code>issue_</code> as the id, and a label that matches the field's on-screen name exactly
+            (used to find it on the read-only view page).
+          </p>
+        </div>
       </div>
     </div>
   <% end %>
