@@ -43,8 +43,7 @@ class ChildStatusSyncTest < ActiveSupport::TestCase
         'UAT Signoff Received', 'Released to Production'
       ].join("\n"),
       'date_sync_child_trackers' => 'Task',
-      'earliest_date_custom_fields' => 'Actual start date',
-      'latest_date_custom_fields' => 'Actual end date',
+      'date_sync_custom_fields' => 'Actual start date,Actual end date',
       'sync_planned_start_date' => '1',
       'sync_planned_end_date' => '1'
     )
@@ -403,7 +402,46 @@ class ChildStatusSyncTest < ActiveSupport::TestCase
                  "With no restricted statuses configured, all statuses should sync as before"
   end
 
-  test "parent Actual Start Date becomes the earliest among all child tasks" do
+  test "parent Actual Start/End Date is directly overwritten with the child task's current value" do
+    child_issue = Issue.create!(project: @project, tracker: @tracker, subject: 'Child Task', status: @new_status, parent_id: @parent_issue.id)
+    child_issue.custom_field_values = {
+      @actual_start_date_field.id => '2026-08-05',
+      @actual_end_date_field.id => '2026-08-08'
+    }
+    child_issue.save!
+
+    @parent_issue.reload
+    assert_equal '2026-08-05', @parent_issue.custom_field_value(@actual_start_date_field.id)
+    assert_equal '2026-08-08', @parent_issue.custom_field_value(@actual_end_date_field.id)
+  end
+
+  test "parent Actual Start/End Date follows the child even when the child moves to a less extreme date" do
+    child_issue = Issue.create!(project: @project, tracker: @tracker, subject: 'Child Task', status: @new_status, parent_id: @parent_issue.id)
+    child_issue.custom_field_values = {
+      @actual_start_date_field.id => '2026-08-04',
+      @actual_end_date_field.id => '2026-08-09'
+    }
+    child_issue.save!
+
+    @parent_issue.reload
+    assert_equal '2026-08-04', @parent_issue.custom_field_value(@actual_start_date_field.id)
+    assert_equal '2026-08-09', @parent_issue.custom_field_value(@actual_end_date_field.id)
+
+    # Child later moves to dates INSIDE the previous window - parent must still follow, no ratchet
+    child_issue.custom_field_values = {
+      @actual_start_date_field.id => '2026-08-06',
+      @actual_end_date_field.id => '2026-08-07'
+    }
+    child_issue.save!
+
+    @parent_issue.reload
+    assert_equal '2026-08-06', @parent_issue.custom_field_value(@actual_start_date_field.id),
+                 "Parent should follow the child's latest value directly, with no earliest/latest comparison"
+    assert_equal '2026-08-07', @parent_issue.custom_field_value(@actual_end_date_field.id),
+                 "Parent should follow the child's latest value directly, with no earliest/latest comparison"
+  end
+
+  test "with multiple child tasks, whichever was saved most recently determines the parent's date" do
     child1 = Issue.create!(project: @project, tracker: @tracker, subject: 'Child Task 1', status: @new_status, parent_id: @parent_issue.id)
     child1.custom_field_values = { @actual_start_date_field.id => '2026-02-01' }
     child1.save!
@@ -412,75 +450,52 @@ class ChildStatusSyncTest < ActiveSupport::TestCase
     assert_equal '2026-02-01', @parent_issue.custom_field_value(@actual_start_date_field.id)
 
     child2 = Issue.create!(project: @project, tracker: @tracker, subject: 'Child Task 2', status: @new_status, parent_id: @parent_issue.id)
-    child2.custom_field_values = { @actual_start_date_field.id => '2026-01-10' }
+    child2.custom_field_values = { @actual_start_date_field.id => '2026-03-15' }
     child2.save!
 
     @parent_issue.reload
-    assert_equal '2026-01-10', @parent_issue.custom_field_value(@actual_start_date_field.id),
-                 "Parent Actual Start Date should become the earliest date among all its child tasks"
-  end
+    assert_equal '2026-03-15', @parent_issue.custom_field_value(@actual_start_date_field.id),
+                 "The most recently saved child's date should win, regardless of whether it is earlier or later"
 
-  test "parent Actual End Date becomes the latest among all child tasks" do
-    child1 = Issue.create!(project: @project, tracker: @tracker, subject: 'Child Task 1', status: @new_status, parent_id: @parent_issue.id)
-    child1.custom_field_values = { @actual_end_date_field.id => '2026-02-01' }
-    child1.save!
-
-    child2 = Issue.create!(project: @project, tracker: @tracker, subject: 'Child Task 2', status: @new_status, parent_id: @parent_issue.id)
-    child2.custom_field_values = { @actual_end_date_field.id => '2026-03-15' }
-    child2.save!
-
-    @parent_issue.reload
-    assert_equal '2026-03-15', @parent_issue.custom_field_value(@actual_end_date_field.id),
-                 "Parent Actual End Date should become the latest date among all its child tasks"
-  end
-
-  test "parent Actual Start Date does not regress when a later-saved child has a less extreme date" do
-    child1 = Issue.create!(project: @project, tracker: @tracker, subject: 'Child Task 1', status: @new_status, parent_id: @parent_issue.id)
-    child1.custom_field_values = { @actual_start_date_field.id => '2026-01-05' }
+    # child1 is saved again (still holding its original, earlier value) - it should win back
     child1.save!
 
     @parent_issue.reload
-    assert_equal '2026-01-05', @parent_issue.custom_field_value(@actual_start_date_field.id)
-
-    child2 = Issue.create!(project: @project, tracker: @tracker, subject: 'Child Task 2', status: @new_status, parent_id: @parent_issue.id)
-    child2.custom_field_values = { @actual_start_date_field.id => '2026-02-20' }
-    child2.save!
-
-    @parent_issue.reload
-    assert_equal '2026-01-05', @parent_issue.custom_field_value(@actual_start_date_field.id),
-                 "Parent should keep the earlier date it already holds; a later, less extreme child date must not overwrite it"
+    assert_equal '2026-02-01', @parent_issue.custom_field_value(@actual_start_date_field.id),
+                 "Re-saving child1 should push its value back onto the parent, since there is no earliest/latest comparison"
   end
 
-  test "non-Task tracker siblings are excluded from date aggregation" do
+  test "non-Task tracker children never push dates to the parent" do
     bug_child = Issue.create!(project: @project, tracker: @bug_tracker, subject: 'Bug Child', status: @new_status, parent_id: @parent_issue.id)
     bug_child.custom_field_values = { @actual_start_date_field.id => '2026-01-01' }
     bug_child.save!
 
-    task_child = Issue.create!(project: @project, tracker: @tracker, subject: 'Task Child', status: @new_status, parent_id: @parent_issue.id)
-    task_child.custom_field_values = { @actual_start_date_field.id => '2026-02-01' }
-    task_child.save!
-
     @parent_issue.reload
-    assert_equal '2026-02-01', @parent_issue.custom_field_value(@actual_start_date_field.id),
-                 "The Bug sibling's earlier date should be excluded from the aggregate, even though it exists on a sibling issue"
+    assert_equal '', @parent_issue.custom_field_value(@actual_start_date_field.id).to_s,
+                 "A Bug child's date should never be pushed to the parent, since Bug is not in date_sync_child_trackers"
   end
 
-  test "parent Planned Start/End Date aggregate from native start_date/due_date across child tasks" do
+  test "parent Planned Start/End Date is directly overwritten from the child's built-in Start/Due date" do
     Issue.create!(
-      project: @project, tracker: @tracker, subject: 'Child Task 1', status: @new_status,
+      project: @project, tracker: @tracker, subject: 'Child Task', status: @new_status,
       parent_id: @parent_issue.id, start_date: Date.new(2026, 2, 1), due_date: Date.new(2026, 2, 10)
     )
 
+    @parent_issue.reload
+    assert_equal Date.new(2026, 2, 1), @parent_issue.start_date
+    assert_equal Date.new(2026, 2, 10), @parent_issue.due_date
+
+    # A second child task with dates INSIDE the first child's range - parent must still follow it directly
     Issue.create!(
       project: @project, tracker: @tracker, subject: 'Child Task 2', status: @new_status,
-      parent_id: @parent_issue.id, start_date: Date.new(2026, 1, 15), due_date: Date.new(2026, 3, 5)
+      parent_id: @parent_issue.id, start_date: Date.new(2026, 2, 5), due_date: Date.new(2026, 2, 6)
     )
 
     @parent_issue.reload
-    assert_equal Date.new(2026, 1, 15), @parent_issue.start_date,
-                 "Parent Planned Start Date should be the earliest start_date among child tasks"
-    assert_equal Date.new(2026, 3, 5), @parent_issue.due_date,
-                 "Parent Planned End Date should be the latest due_date among child tasks"
+    assert_equal Date.new(2026, 2, 5), @parent_issue.start_date,
+                 "Parent Planned Start Date should follow the most recently saved child directly, no earliest comparison"
+    assert_equal Date.new(2026, 2, 6), @parent_issue.due_date,
+                 "Parent Planned End Date should follow the most recently saved child directly, no latest comparison"
   end
 
   test "disabling sync_planned_start_date skips only the native Start date sync" do
@@ -526,7 +541,7 @@ class ChildStatusSyncTest < ActiveSupport::TestCase
                  "A missing (not just unset) setting key should still default to enabled, matching the registered default"
   end
 
-  test "blank date_sync_child_trackers disables date aggregation entirely" do
+  test "blank date_sync_child_trackers disables date sync entirely" do
     Setting.plugin_redmine_child_status_sync = Setting.plugin_redmine_child_status_sync.merge('date_sync_child_trackers' => '')
 
     child = Issue.create!(project: @project, tracker: @tracker, subject: 'Child Task', status: @new_status, parent_id: @parent_issue.id)
@@ -535,53 +550,24 @@ class ChildStatusSyncTest < ActiveSupport::TestCase
 
     @parent_issue.reload
     assert_equal '', @parent_issue.custom_field_value(@actual_start_date_field.id).to_s,
-                 "With no trackers configured for date aggregation, nothing should propagate to the parent"
+                 "With no trackers configured for date sync, nothing should propagate to the parent"
   end
 
-  test "a single child widening then narrowing its dates matches the reported envelope requirement" do
-    child_issue = Issue.create!(project: @project, tracker: @tracker, subject: 'Child Task', status: @new_status, parent_id: @parent_issue.id)
-    child_issue.custom_field_values = {
-      @actual_start_date_field.id => '2026-08-05',
-      @actual_end_date_field.id => '2026-08-08'
-    }
-    child_issue.save!
+  test "blank date_sync_custom_fields disables custom field date sync entirely" do
+    Setting.plugin_redmine_child_status_sync = Setting.plugin_redmine_child_status_sync.merge('date_sync_custom_fields' => '')
+
+    child = Issue.create!(project: @project, tracker: @tracker, subject: 'Child Task', status: @new_status, parent_id: @parent_issue.id)
+    child.custom_field_values = { @actual_start_date_field.id => '2026-01-01' }
+    child.save!
 
     @parent_issue.reload
-    assert_equal '2026-08-05', @parent_issue.custom_field_value(@actual_start_date_field.id)
-    assert_equal '2026-08-08', @parent_issue.custom_field_value(@actual_end_date_field.id)
-
-    # Case 1: child widens both dates -> parent must follow
-    child_issue.custom_field_values = {
-      @actual_start_date_field.id => '2026-08-04',
-      @actual_end_date_field.id => '2026-08-09'
-    }
-    child_issue.save!
-
-    @parent_issue.reload
-    assert_equal '2026-08-04', @parent_issue.custom_field_value(@actual_start_date_field.id),
-                 "Case 1: parent Actual Start Date should widen to the earlier date"
-    assert_equal '2026-08-09', @parent_issue.custom_field_value(@actual_end_date_field.id),
-                 "Case 1: parent Actual End Date should widen to the later date"
-
-    # Case 2: child narrows back inside the already-established window -> parent must NOT change
-    child_issue.custom_field_values = {
-      @actual_start_date_field.id => '2026-08-06',
-      @actual_end_date_field.id => '2026-08-07'
-    }
-    child_issue.save!
-
-    @parent_issue.reload
-    assert_equal '2026-08-04', @parent_issue.custom_field_value(@actual_start_date_field.id),
-                 "Case 2: parent Actual Start Date should stay at the earliest ever pushed, not shrink to the child's new later value"
-    assert_equal '2026-08-09', @parent_issue.custom_field_value(@actual_end_date_field.id),
-                 "Case 2: parent Actual End Date should stay at the latest ever pushed, not shrink to the child's new earlier value"
+    assert_equal '', @parent_issue.custom_field_value(@actual_start_date_field.id).to_s,
+                 "With no custom fields configured for date sync, nothing should propagate to the parent"
   end
 
   test "custom field lookup for date sync is case-insensitive" do
-    # Settings configured with different casing than the actual custom field names
     Setting.plugin_redmine_child_status_sync = Setting.plugin_redmine_child_status_sync.merge(
-      'earliest_date_custom_fields' => 'ACTUAL START DATE',
-      'latest_date_custom_fields' => 'actual end date'
+      'date_sync_custom_fields' => 'ACTUAL START DATE,actual end date'
     )
 
     child_issue = Issue.create!(project: @project, tracker: @tracker, subject: 'Child Task', status: @new_status, parent_id: @parent_issue.id)
