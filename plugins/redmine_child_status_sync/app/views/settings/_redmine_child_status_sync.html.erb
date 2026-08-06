@@ -62,4 +62,70 @@
     </ul>
     This keeps auto status sync on the normal Task &rarr; User Story &rarr; CR forward-moving flow.
   </p>
+
+  <h3 style="margin-top: 30px;">Auto-Update Parent Dates</h3>
+
+  <p>
+    <label for="settings_date_sync_child_trackers">Child Task Trackers (can push a parent's date envelope)</label><br>
+    <%= text_field_tag 'settings[date_sync_child_trackers]', @settings['date_sync_child_trackers'], size: 60 %>
+    <em style="display: block; margin-top: 5px; color: #666;">
+      Comma-separated tracker names, e.g. <code>Task</code>. Only issues of these trackers count as "child tasks" for
+      the date sync below &mdash; saving an issue of any other tracker (e.g. Bug/CR_Bug) never affects a parent's dates.
+    </em>
+  </p>
+
+  <p>
+    <label for="settings_earliest_date_custom_fields">Earliest Date Custom Fields (parent holds the earliest ever seen)</label><br>
+    <%= text_field_tag 'settings[earliest_date_custom_fields]', @settings['earliest_date_custom_fields'], size: 60 %>
+    <em style="display: block; margin-top: 5px; color: #666;">
+      Comma-separated custom field names, e.g. <code>Actual start date</code>. Whenever a child task is saved, its
+      current value for these fields is compared directly against what the parent already holds &mdash; the parent
+      is only updated when the child's value is <strong>earlier</strong> than the parent's current value (or the
+      parent has none yet). A child later moving to a <strong>later</strong> date never pulls the parent's date back
+      in; the parent keeps the earliest date any child has ever reported.
+      Add a new field name here (matching an existing custom field exactly) to bring it into this flow &mdash;
+      no code change needed.
+    </em>
+    <em style="display: block; margin-top: 5px; color: #888; font-style: italic;">
+      Available issue custom fields (copy the exact spelling from here):
+      <%= IssueCustomField.order(:name).pluck(:name).join(', ').presence || 'none defined yet' %>
+    </em>
+  </p>
+
+  <p>
+    <label for="settings_latest_date_custom_fields">Latest Date Custom Fields (parent holds the latest ever seen)</label><br>
+    <%= text_field_tag 'settings[latest_date_custom_fields]', @settings['latest_date_custom_fields'], size: 60 %>
+    <em style="display: block; margin-top: 5px; color: #666;">
+      Comma-separated custom field names, e.g. <code>Actual end date</code>. Works the same way as "Earliest Date
+      Custom Fields" above, but in reverse: the parent is only updated when a child's value is <strong>later</strong>
+      than what the parent currently holds, and a child later moving to an earlier date never pulls it back.
+    </em>
+  </p>
+
+  <p>
+    <label>
+      <%= check_box_tag 'settings[sync_planned_dates]', '1', @settings['sync_planned_dates'] == '1' %>
+      <%= label_tag 'settings[sync_planned_dates]', 'Also sync Planned Start/End Date (built-in Start date / Due date fields)' %>
+    </label>
+    <em style="display: block; margin-top: 5px; color: #666;">
+      When enabled, the same earliest/latest rule is applied to Redmine's built-in Start date and Due date fields
+      (referred to as Planned Start Date / Planned End Date). These are fixed Redmine fields, so unlike the custom
+      field lists above there is nothing to name here.
+    </em>
+  </p>
+
+  <p style="margin-top: 20px; padding: 10px; background-color: #f5f5f5; border-left: 3px solid #2196F3;">
+    <strong>How it works:</strong><br>
+    Whenever a child task (tracker listed under "Child Task Trackers", by default Task) is created or updated, this
+    plugin checks the child's current date values directly against what its parent(s) already hold:
+    <ul style="margin: 5px 0 0 20px;">
+      <li>Actual Start Date / any field under "Earliest Date Custom Fields" &rarr; parent is pulled earlier if the child's date is earlier than the parent's current value; a child moving later is ignored</li>
+      <li>Actual End Date / any field under "Latest Date Custom Fields" &rarr; parent is pushed later if the child's date is later than the parent's current value; a child moving earlier is ignored</li>
+      <li>Planned Start Date (Start date) and Planned End Date (Due date) follow the same rule, if "Also sync Planned Start/End Date" is enabled</li>
+    </ul>
+    Example: parent starts at 05 Aug&ndash;08 Aug. A child moving to 04 Aug&ndash;09 Aug widens the parent to
+    04 Aug&ndash;09 Aug. A child then moving to 06 Aug&ndash;07 Aug (back inside that window) leaves the parent
+    unchanged at 04 Aug&ndash;09 Aug &mdash; the parent always holds the earliest start and latest end any child has
+    ever reported, and is never pulled back in by a later, less extreme update.
+  </p>
 </div>
