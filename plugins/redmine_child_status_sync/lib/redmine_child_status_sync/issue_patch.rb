@@ -132,8 +132,11 @@ module RedmineChildStatusSync
           ratchet_custom_field_up(parent_issues, field_name, :latest, debug_logging)
         end
 
-        if sync_planned_dates?
+        if sync_planned_start_date?
           ratchet_native_date_up(parent_issues, :start_date, 'Planned Start Date', :earliest, debug_logging)
+        end
+
+        if sync_planned_end_date?
           ratchet_native_date_up(parent_issues, :due_date, 'Planned End Date', :latest, debug_logging)
         end
       end
@@ -157,8 +160,17 @@ module RedmineChildStatusSync
                .split(/[\r\n,]+/).map(&:strip).reject(&:blank?)
       end
 
-      def sync_planned_dates?
-        Setting.plugin_redmine_child_status_sync['sync_planned_dates'] == '1'
+      # Absent from the persisted settings (nil) is treated as enabled, matching the registered
+      # default - only an explicit '0' turns this off. This mirrors how the Actual date fields behave
+      # (they have no separate on/off flag at all, so they're never silently disabled by a missing key);
+      # a plain `== '1'` check would silently read as disabled for any install whose settings were saved
+      # before this checkbox existed on the page, since an unchecked checkbox submits nothing at all.
+      def sync_planned_start_date?
+        Setting.plugin_redmine_child_status_sync['sync_planned_start_date'] != '0'
+      end
+
+      def sync_planned_end_date?
+        Setting.plugin_redmine_child_status_sync['sync_planned_end_date'] != '0'
       end
 
       # Widens one custom date field on each parent to include this child's current value, but only

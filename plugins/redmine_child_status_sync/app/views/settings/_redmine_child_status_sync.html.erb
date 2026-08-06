@@ -104,13 +104,25 @@
 
   <p>
     <label>
-      <%= check_box_tag 'settings[sync_planned_dates]', '1', @settings['sync_planned_dates'] == '1' %>
-      <%= label_tag 'settings[sync_planned_dates]', 'Also sync Planned Start/End Date (built-in Start date / Due date fields)' %>
+      <%= check_box_tag 'settings[sync_planned_start_date]', '1', @settings['sync_planned_start_date'] != '0' %>
+      <%= label_tag 'settings[sync_planned_start_date]', 'Sync Planned Start Date (built-in Start date field)' %>
     </label>
     <em style="display: block; margin-top: 5px; color: #666;">
-      When enabled, the same earliest/latest rule is applied to Redmine's built-in Start date and Due date fields
-      (referred to as Planned Start Date / Planned End Date). These are fixed Redmine fields, so unlike the custom
-      field lists above there is nothing to name here.
+      When enabled, the parent's built-in Start date follows the same rule as "Earliest Date Custom Fields" above:
+      it's pulled earlier when a child task's Start date is earlier, and never pulled back by a child moving later.
+      This is a fixed Redmine field, so unlike the custom field lists above there is nothing to name here &mdash;
+      just this on/off switch.
+    </em>
+  </p>
+
+  <p>
+    <label>
+      <%= check_box_tag 'settings[sync_planned_end_date]', '1', @settings['sync_planned_end_date'] != '0' %>
+      <%= label_tag 'settings[sync_planned_end_date]', 'Sync Planned End Date (built-in Due date field)' %>
+    </label>
+    <em style="display: block; margin-top: 5px; color: #666;">
+      Same as "Sync Planned Start Date" above, but for the built-in Due date field, following the "Latest Date
+      Custom Fields" rule: pushed later when a child task's Due date is later, never pulled back by a child moving earlier.
     </em>
   </p>
 
@@ -121,11 +133,14 @@
     <ul style="margin: 5px 0 0 20px;">
       <li>Actual Start Date / any field under "Earliest Date Custom Fields" &rarr; parent is pulled earlier if the child's date is earlier than the parent's current value; a child moving later is ignored</li>
       <li>Actual End Date / any field under "Latest Date Custom Fields" &rarr; parent is pushed later if the child's date is later than the parent's current value; a child moving earlier is ignored</li>
-      <li>Planned Start Date (Start date) and Planned End Date (Due date) follow the same rule, if "Also sync Planned Start/End Date" is enabled</li>
+      <li>Planned Start Date (Start date) follows the same earlier-only rule, if "Sync Planned Start Date" is enabled</li>
+      <li>Planned End Date (Due date) follows the same later-only rule, if "Sync Planned End Date" is enabled</li>
     </ul>
     Example: parent starts at 05 Aug&ndash;08 Aug. A child moving to 04 Aug&ndash;09 Aug widens the parent to
     04 Aug&ndash;09 Aug. A child then moving to 06 Aug&ndash;07 Aug (back inside that window) leaves the parent
     unchanged at 04 Aug&ndash;09 Aug &mdash; the parent always holds the earliest start and latest end any child has
-    ever reported, and is never pulled back in by a later, less extreme update.
+    ever reported, and is never pulled back in by a later, less extreme update. This applies the same way across
+    every project and every level of the parent chain (Task &rarr; User Story &rarr; Change Request, etc.) &mdash;
+    all ancestors of the saved child are checked, not just its immediate parent.
   </p>
 </div>

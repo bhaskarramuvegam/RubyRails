@@ -45,7 +45,8 @@ class ChildStatusSyncTest < ActiveSupport::TestCase
       'date_sync_child_trackers' => 'Task',
       'earliest_date_custom_fields' => 'Actual start date',
       'latest_date_custom_fields' => 'Actual end date',
-      'sync_planned_dates' => '1'
+      'sync_planned_start_date' => '1',
+      'sync_planned_end_date' => '1'
     )
 
     # Create parent issue
@@ -482,8 +483,8 @@ class ChildStatusSyncTest < ActiveSupport::TestCase
                  "Parent Planned End Date should be the latest due_date among child tasks"
   end
 
-  test "disabling sync_planned_dates skips native Start date/Due date aggregation" do
-    Setting.plugin_redmine_child_status_sync = Setting.plugin_redmine_child_status_sync.merge('sync_planned_dates' => '0')
+  test "disabling sync_planned_start_date skips only the native Start date sync" do
+    Setting.plugin_redmine_child_status_sync = Setting.plugin_redmine_child_status_sync.merge('sync_planned_start_date' => '0')
 
     Issue.create!(
       project: @project, tracker: @tracker, subject: 'Child Task', status: @new_status,
@@ -491,8 +492,38 @@ class ChildStatusSyncTest < ActiveSupport::TestCase
     )
 
     @parent_issue.reload
-    assert_nil @parent_issue.start_date, "Parent start_date should remain untouched when sync_planned_dates is disabled"
-    assert_nil @parent_issue.due_date, "Parent due_date should remain untouched when sync_planned_dates is disabled"
+    assert_nil @parent_issue.start_date, "Parent start_date should remain untouched when sync_planned_start_date is disabled"
+    assert_equal Date.new(2026, 1, 31), @parent_issue.due_date, "Parent due_date should still sync independently"
+  end
+
+  test "disabling sync_planned_end_date skips only the native Due date sync" do
+    Setting.plugin_redmine_child_status_sync = Setting.plugin_redmine_child_status_sync.merge('sync_planned_end_date' => '0')
+
+    Issue.create!(
+      project: @project, tracker: @tracker, subject: 'Child Task', status: @new_status,
+      parent_id: @parent_issue.id, start_date: Date.new(2026, 1, 1), due_date: Date.new(2026, 1, 31)
+    )
+
+    @parent_issue.reload
+    assert_equal Date.new(2026, 1, 1), @parent_issue.start_date, "Parent start_date should still sync independently"
+    assert_nil @parent_issue.due_date, "Parent due_date should remain untouched when sync_planned_end_date is disabled"
+  end
+
+  test "planned date sync defaults to enabled when the setting key is entirely missing from persisted settings" do
+    # Simulates an install whose settings were saved before these checkboxes existed on the page -
+    # an unchecked checkbox submits nothing at all, so the key can be fully absent, not just '0'.
+    Setting.plugin_redmine_child_status_sync = Setting.plugin_redmine_child_status_sync.except('sync_planned_start_date', 'sync_planned_end_date')
+
+    Issue.create!(
+      project: @project, tracker: @tracker, subject: 'Child Task', status: @new_status,
+      parent_id: @parent_issue.id, start_date: Date.new(2026, 1, 1), due_date: Date.new(2026, 1, 31)
+    )
+
+    @parent_issue.reload
+    assert_equal Date.new(2026, 1, 1), @parent_issue.start_date,
+                 "A missing (not just unset) setting key should still default to enabled, matching the registered default"
+    assert_equal Date.new(2026, 1, 31), @parent_issue.due_date,
+                 "A missing (not just unset) setting key should still default to enabled, matching the registered default"
   end
 
   test "blank date_sync_child_trackers disables date aggregation entirely" do
