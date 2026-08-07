@@ -92,15 +92,21 @@ module RedmineChildStatusSync
         Rails.logger.info("===== CHILD STATUS SYNC DEBUG END =====") if debug_logging
       end
 
-      # Directly copies date fields from an eligible child task up to every ancestor issue: whenever
-      # an issue whose tracker is listed in "date_sync_child_trackers" (default: Task) is saved, its
-      # current value for each configured field is pushed onto every parent's same field, overwriting
-      # whatever the parent currently holds. There is no earliest/latest comparison here - the most
-      # recently saved child simply wins, and a Bug/CR_Bug (or any other non-listed tracker) child
-      # never affects a parent's dates at all. Which custom fields sync is configurable from the
-      # plugin settings page - adding a future date field is a settings change, not a code change.
-      # Planned Start/End Date map to Redmine's built-in start_date/due_date columns and are each
-      # independently toggled.
+      # Keeps a parent issue's date fields as a LIVE aggregate over its current child tasks:
+      #   - Each field under "Earliest Date Custom Fields" (and Planned Start Date) = MIN across all
+      #     current child tasks
+      #   - Each field under "Latest Date Custom Fields" (and Planned End Date) = MAX across all
+      #     current child tasks
+      # This is recomputed fresh from every currently-existing child every time any one of them is
+      # saved - it is not a ratchet and not "whichever child was saved most recently wins". A second or
+      # third child task created later only moves the parent if it is actually more extreme than every
+      # other sibling; a child whose value already sits inside the existing min/max is a no-op.
+      # Only issues whose tracker is listed in "date_sync_child_trackers" (default: Task) count as
+      # child tasks, both for triggering this recompute and as candidates in the aggregate; a
+      # Bug/CR_Bug (or any other non-listed tracker) child never affects a parent's dates.
+      # Which custom fields count as "earliest" vs "latest" is configurable from the plugin settings
+      # page - adding a future date field is a settings change, not a code change. Planned Start/End
+      # Date map to Redmine's built-in start_date/due_date columns and are each independently toggled.
       def sync_parent_dates_on_child_update
         unless Setting.plugin_redmine_child_status_sync['enabled'] == '1'
           return
@@ -119,16 +125,36 @@ module RedmineChildStatusSync
           return
         end
 
-        date_sync_custom_field_names.each do |field_name|
-          push_custom_field_to_parents(parent_issues, field_name, debug_logging)
+        child_tracker_ids = date_sync_child_tracker_ids
+        if child_tracker_ids.empty?
+          Rails.logger.info("SKIPPED date sync: no trackers resolved from 'date_sync_child_trackers'") if debug_logging
+          return
         end
 
-        if sync_planned_start_date?
-          push_native_date_to_parents(parent_issues, :start_date, 'Planned Start Date', debug_logging)
-        end
+        parent_issues.each do |parent_issue|
+          next unless parent_issue
 
-        if sync_planned_end_date?
-          push_native_date_to_parents(parent_issues, :due_date, 'Planned End Date', debug_logging)
+          sibling_ids = Issue.where(parent_id: parent_issue.id, tracker_id: child_tracker_ids).pluck(:id)
+          if sibling_ids.empty?
+            Rails.logger.info("SKIPPED date sync for parent ##{parent_issue.id}: no child tasks found") if debug_logging
+            next
+          end
+
+          earliest_date_custom_field_names.each do |field_name|
+            sync_aggregate_custom_field(parent_issue, sibling_ids, field_name, :minimum, debug_logging)
+          end
+
+          latest_date_custom_field_names.each do |field_name|
+            sync_aggregate_custom_field(parent_issue, sibling_ids, field_name, :maximum, debug_logging)
+          end
+
+          if sync_planned_start_date?
+            sync_aggregate_native_date(parent_issue, sibling_ids, :start_date, 'Planned Start Date', :minimum, debug_logging)
+          end
+
+          if sync_planned_end_date?
+            sync_aggregate_native_date(parent_issue, sibling_ids, :due_date, 'Planned End Date', :maximum, debug_logging)
+          end
         end
       end
 
@@ -141,8 +167,20 @@ module RedmineChildStatusSync
                .split(',').map { |name| name.strip.downcase }.reject(&:blank?)
       end
 
-      def date_sync_custom_field_names
-        Setting.plugin_redmine_child_status_sync['date_sync_custom_fields'].to_s
+      def date_sync_child_tracker_ids
+        names = date_sync_child_tracker_names
+        return [] if names.empty?
+
+        Tracker.where('LOWER(name) IN (?)', names).pluck(:id)
+      end
+
+      def earliest_date_custom_field_names
+        Setting.plugin_redmine_child_status_sync['earliest_date_custom_fields'].to_s
+               .split(/[\r\n,]+/).map(&:strip).reject(&:blank?)
+      end
+
+      def latest_date_custom_field_names
+        Setting.plugin_redmine_child_status_sync['latest_date_custom_fields'].to_s
                .split(/[\r\n,]+/).map(&:strip).reject(&:blank?)
       end
 
@@ -159,50 +197,45 @@ module RedmineChildStatusSync
         Setting.plugin_redmine_child_status_sync['sync_planned_end_date'] != '0'
       end
 
-      # Copies one custom date field directly from this child onto each parent, overwriting the
-      # parent's current value whenever it differs - no comparison, no direction, just a straight push.
-      def push_custom_field_to_parents(parent_issues, field_name, debug_logging)
+      # Recomputes one custom date field on a parent as MIN/MAX (per `aggregate`) across the given
+      # sibling child task ids, and only writes it when the result actually differs from what the
+      # parent already holds - so an already-correct value is left untouched.
+      def sync_aggregate_custom_field(parent_issue, sibling_ids, field_name, aggregate, debug_logging)
         custom_field = find_custom_field(field_name)
         unless custom_field
           Rails.logger.info("SKIPPED date sync: no custom field named '#{field_name}' found") if debug_logging
           return
         end
 
-        child_value = raw_custom_field_value(self, custom_field.id)
-        return if child_value.blank?
+        aggregate_value = CustomValue.where(customized_type: 'Issue', customized_id: sibling_ids, custom_field_id: custom_field.id)
+                                      .where.not(value: [nil, ''])
+                                      .public_send(aggregate, :value)
+        return if aggregate_value.nil?
 
-        parent_issues.each do |parent_issue|
-          next unless parent_issue
+        current_value = raw_custom_field_value(parent_issue, custom_field.id)
+        return if current_value == aggregate_value
 
-          current_value = raw_custom_field_value(parent_issue, custom_field.id)
-          next if current_value == child_value
-
-          begin
-            write_custom_field_value(parent_issue, custom_field.id, child_value)
-            Rails.logger.info("Child Status Sync: Set parent issue ##{parent_issue.id} '#{field_name}' to '#{child_value}' from child ##{id}") if debug_logging
-          rescue => e
-            Rails.logger.error("ERROR updating parent issue ##{parent_issue.id} custom field '#{field_name}': #{e.message}")
-            Rails.logger.error(e.backtrace.join("\n"))
-          end
+        begin
+          write_custom_field_value(parent_issue, custom_field.id, aggregate_value)
+          Rails.logger.info("Child Status Sync: Set parent issue ##{parent_issue.id} '#{field_name}' to #{aggregate} child value '#{aggregate_value}'") if debug_logging
+        rescue => e
+          Rails.logger.error("ERROR updating parent issue ##{parent_issue.id} custom field '#{field_name}': #{e.message}")
+          Rails.logger.error(e.backtrace.join("\n"))
         end
       end
 
-      # Same idea as push_custom_field_to_parents, but for Redmine's built-in start_date/due_date columns.
-      def push_native_date_to_parents(parent_issues, column, label, debug_logging)
-        child_value = self[column]
-        return if child_value.nil?
+      # Same idea as sync_aggregate_custom_field, but for Redmine's built-in start_date/due_date columns.
+      def sync_aggregate_native_date(parent_issue, sibling_ids, column, label, aggregate, debug_logging)
+        aggregate_value = Issue.where(id: sibling_ids).where.not(column => nil).public_send(aggregate, column)
+        return if aggregate_value.nil?
+        return if parent_issue[column] == aggregate_value
 
-        parent_issues.each do |parent_issue|
-          next unless parent_issue
-          next if parent_issue[column] == child_value
-
-          begin
-            parent_issue.update_column(column, child_value)
-            Rails.logger.info("Child Status Sync: Set parent issue ##{parent_issue.id} #{label} to '#{child_value}' from child ##{id}") if debug_logging
-          rescue => e
-            Rails.logger.error("ERROR updating parent issue ##{parent_issue.id} #{label}: #{e.message}")
-            Rails.logger.error(e.backtrace.join("\n"))
-          end
+        begin
+          parent_issue.update_column(column, aggregate_value)
+          Rails.logger.info("Child Status Sync: Set parent issue ##{parent_issue.id} #{label} to #{aggregate} child value '#{aggregate_value}'") if debug_logging
+        rescue => e
+          Rails.logger.error("ERROR updating parent issue ##{parent_issue.id} #{label}: #{e.message}")
+          Rails.logger.error(e.backtrace.join("\n"))
         end
       end
 
