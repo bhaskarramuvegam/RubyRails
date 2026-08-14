@@ -77,18 +77,29 @@
   </p>
 
   <p>
-    <label for="settings_date_sync_custom_fields">Date Custom Fields (synced from the latest task)</label><br>
-    <%= text_field_tag 'settings[date_sync_custom_fields]', @settings['date_sync_custom_fields'], size: 60 %>
+    <label for="settings_earliest_date_custom_fields">Earliest Date Custom Fields (parent = earliest among all descendant tasks)</label><br>
+    <%= text_field_tag 'settings[earliest_date_custom_fields]', @settings['earliest_date_custom_fields'], size: 60 %>
     <em style="display: block; margin-top: 5px; color: #666;">
-      Comma-separated custom field names, e.g. <code>Actual start date,Actual end date</code>. Whenever a child task
-      is created or updated, each of these fields is copied from it onto every ancestor issue &mdash; but only when
-      that child is the <strong>most recently created</strong> eligible task anywhere in that ancestor's subtree (see
-      "How it works" below). Add a new field name here (matching an existing custom field exactly) to bring it into
-      this flow &mdash; no code change needed.
+      Comma-separated custom field names, e.g. <code>Actual start date</code>. Whenever a child task is created or
+      updated, its value is compared against every other eligible task anywhere in the same ancestor's subtree
+      (see "Child Task Trackers" above) &mdash; if it is now the <strong>earliest</strong> value of all of them, the
+      ancestor's field is set to it; otherwise some other task already holds an earlier value, so the ancestor is
+      left as-is. Add a new field name here (matching an existing custom field exactly) to bring it into this flow
+      &mdash; no code change needed.
     </em>
     <em style="display: block; margin-top: 5px; color: #888; font-style: italic;">
       Available issue custom fields (copy the exact spelling from here):
       <%= IssueCustomField.order(:name).pluck(:name).join(', ').presence || 'none defined yet' %>
+    </em>
+  </p>
+
+  <p>
+    <label for="settings_latest_date_custom_fields">Latest Date Custom Fields (parent = latest among all descendant tasks)</label><br>
+    <%= text_field_tag 'settings[latest_date_custom_fields]', @settings['latest_date_custom_fields'], size: 60 %>
+    <em style="display: block; margin-top: 5px; color: #666;">
+      Comma-separated custom field names, e.g. <code>Actual end date</code>. Works the same way as "Earliest Date
+      Custom Fields" above, but in reverse: the ancestor is only updated when a task's value is the
+      <strong>latest</strong> of all eligible tasks in its subtree.
     </em>
   </p>
 
@@ -98,8 +109,9 @@
       <%= label_tag 'settings[sync_planned_start_date]', 'Sync Planned Start Date (built-in Start date field)' %>
     </label>
     <em style="display: block; margin-top: 5px; color: #666;">
-      When enabled, the built-in Start date is copied the same way as the custom fields above. This is a fixed
-      Redmine field, so unlike the custom field list above there is nothing to name here &mdash; just this on/off switch.
+      When enabled, the built-in Start date follows the same earliest-wins rule as "Earliest Date Custom Fields"
+      above. This is a fixed Redmine field, so unlike the custom field lists above there is nothing to name here
+      &mdash; just this on/off switch.
     </em>
   </p>
 
@@ -109,22 +121,25 @@
       <%= label_tag 'settings[sync_planned_end_date]', 'Sync Planned End Date (built-in Due date field)' %>
     </label>
     <em style="display: block; margin-top: 5px; color: #666;">
-      Same as "Sync Planned Start Date" above, but for the built-in Due date field.
+      Same as "Sync Planned Start Date" above, but for the built-in Due date field, following the latest-wins rule.
     </em>
   </p>
 
   <p style="margin-top: 20px; padding: 10px; background-color: #f5f5f5; border-left: 3px solid #2196F3;">
     <strong>How it works:</strong><br>
     Whenever a child task (tracker listed under "Child Task Trackers", by default Task) is created or updated, this
-    plugin looks at <strong>every</strong> eligible task anywhere in each ancestor's subtree (not just direct
-    children) and finds whichever one was <strong>created most recently</strong>. Only that one task's dates are
-    copied onto the ancestor &mdash; editing any other, earlier-created task never touches that ancestor's dates,
-    no matter how many times it's saved afterwards.
-    <br><br>
-    Example: <code>Change Request &rarr; User Story &rarr; Task1, Task2</code> (Task2 created after Task1).
-    Saving Task2 pushes its dates to both User Story and Change Request, since Task2 is the most recently created
-    task under both of them. Saving Task1 afterwards does nothing at all to either parent &mdash; Task2 remains the
-    latest-created task regardless of which one gets edited, so the dates stay exactly as Task2 last set them.
-    This applies the same way across every project and every level of the parent chain.
+    plugin recomputes each ancestor's dates from <strong>every</strong> eligible task anywhere in that ancestor's
+    subtree (not just direct children):
+    <ul style="margin: 5px 0 0 20px;">
+      <li>Any field under "Earliest Date Custom Fields" &rarr; set to the earliest value among all eligible descendant tasks</li>
+      <li>Any field under "Latest Date Custom Fields" &rarr; set to the latest value among all eligible descendant tasks</li>
+      <li>Planned Start Date (Start date) &rarr; earliest among all descendant tasks, if enabled</li>
+      <li>Planned End Date (Due date) &rarr; latest among all descendant tasks, if enabled</li>
+    </ul>
+    Example: <code>Change Request &rarr; User Story &rarr; Task1, Task2, Task3</code>. If Task2's Actual Start Date
+    is updated, it's compared against Task1 and Task3's current Actual Start Date &mdash; if Task2's new value is
+    now the earliest of the three, both User Story and Change Request move to it; otherwise Task1 or Task3 already
+    holds an earlier date, so nothing changes. Actual End Date works the same way in reverse, comparing against the
+    latest of the group. This reaches every level of the parent chain in one pass, not just the immediate parent.
   </p>
 </div>
