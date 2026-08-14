@@ -77,29 +77,18 @@
   </p>
 
   <p>
-    <label for="settings_earliest_date_custom_fields">Earliest Date Custom Fields (parent = earliest among current child tasks)</label><br>
-    <%= text_field_tag 'settings[earliest_date_custom_fields]', @settings['earliest_date_custom_fields'], size: 60 %>
+    <label for="settings_date_sync_custom_fields">Date Custom Fields (synced from the latest task)</label><br>
+    <%= text_field_tag 'settings[date_sync_custom_fields]', @settings['date_sync_custom_fields'], size: 60 %>
     <em style="display: block; margin-top: 5px; color: #666;">
-      Comma-separated custom field names, e.g. <code>Actual start date</code>. Whenever a child task is created or
-      updated, each parent's value for these fields is recomputed as the <strong>earliest</strong> value found among
-      <strong>all</strong> of its current child tasks (not just the one just saved) &mdash; the parent is only
-      written to when that recomputed value actually differs from what it already holds.
-      Add a new field name here (matching an existing custom field exactly) to bring it into this flow &mdash;
-      no code change needed.
+      Comma-separated custom field names, e.g. <code>Actual start date,Actual end date</code>. Whenever a child task
+      is created or updated, each of these fields is copied from it onto every ancestor issue &mdash; but only when
+      that child is the <strong>most recently created</strong> eligible task anywhere in that ancestor's subtree (see
+      "How it works" below). Add a new field name here (matching an existing custom field exactly) to bring it into
+      this flow &mdash; no code change needed.
     </em>
     <em style="display: block; margin-top: 5px; color: #888; font-style: italic;">
       Available issue custom fields (copy the exact spelling from here):
       <%= IssueCustomField.order(:name).pluck(:name).join(', ').presence || 'none defined yet' %>
-    </em>
-  </p>
-
-  <p>
-    <label for="settings_latest_date_custom_fields">Latest Date Custom Fields (parent = latest among current child tasks)</label><br>
-    <%= text_field_tag 'settings[latest_date_custom_fields]', @settings['latest_date_custom_fields'], size: 60 %>
-    <em style="display: block; margin-top: 5px; color: #666;">
-      Comma-separated custom field names, e.g. <code>Actual end date</code>. Works the same way as "Earliest Date
-      Custom Fields" above, but the parent is recomputed as the <strong>latest</strong> value among all of its
-      current child tasks.
     </em>
   </p>
 
@@ -109,9 +98,8 @@
       <%= label_tag 'settings[sync_planned_start_date]', 'Sync Planned Start Date (built-in Start date field)' %>
     </label>
     <em style="display: block; margin-top: 5px; color: #666;">
-      When enabled, the parent's built-in Start date is recomputed the same way as "Earliest Date Custom Fields"
-      above: the earliest Start date among all of the parent's current child tasks. This is a fixed Redmine field,
-      so unlike the custom field lists above there is nothing to name here &mdash; just this on/off switch.
+      When enabled, the built-in Start date is copied the same way as the custom fields above. This is a fixed
+      Redmine field, so unlike the custom field list above there is nothing to name here &mdash; just this on/off switch.
     </em>
   </p>
 
@@ -121,29 +109,22 @@
       <%= label_tag 'settings[sync_planned_end_date]', 'Sync Planned End Date (built-in Due date field)' %>
     </label>
     <em style="display: block; margin-top: 5px; color: #666;">
-      Same as "Sync Planned Start Date" above, but for the built-in Due date field, recomputed as the latest Due date
-      among all of the parent's current child tasks.
+      Same as "Sync Planned Start Date" above, but for the built-in Due date field.
     </em>
   </p>
 
   <p style="margin-top: 20px; padding: 10px; background-color: #f5f5f5; border-left: 3px solid #2196F3;">
     <strong>How it works:</strong><br>
     Whenever a child task (tracker listed under "Child Task Trackers", by default Task) is created or updated, this
-    plugin recomputes each parent's dates from <strong>every one of its current child tasks</strong>, not just the
-    one that was just saved:
-    <ul style="margin: 5px 0 0 20px;">
-      <li>Any field under "Earliest Date Custom Fields" &rarr; set to the earliest value among all current child tasks</li>
-      <li>Any field under "Latest Date Custom Fields" &rarr; set to the latest value among all current child tasks</li>
-      <li>Planned Start Date (Start date) &rarr; earliest among all current child tasks, if "Sync Planned Start Date" is enabled</li>
-      <li>Planned End Date (Due date) &rarr; latest among all current child tasks, if "Sync Planned End Date" is enabled</li>
-    </ul>
-    Example: a parent starts with no child tasks. A first child task (Task1) is created with 04 Aug&ndash;09 Aug,
-    so the parent becomes 04 Aug&ndash;09 Aug. A second child task (Task2) is then created with 06 Aug&ndash;07 Aug
-    &mdash; since that's inside the range Task1 already established, the parent is unchanged. A third child task
-    (Task3) is created with 05 Aug&ndash;10 Aug &mdash; its start (05 Aug) still isn't earlier than Task1's 04 Aug,
-    so the parent's start stays put, but its end (10 Aug) is later than anything seen so far, so the parent's end
-    moves to 10 Aug. This applies the same way across every project and every level of the parent chain
-    (Task &rarr; User Story &rarr; Change Request, etc.) &mdash; all ancestors of the saved child are recomputed in
-    one pass, not just its immediate parent.
+    plugin looks at <strong>every</strong> eligible task anywhere in each ancestor's subtree (not just direct
+    children) and finds whichever one was <strong>created most recently</strong>. Only that one task's dates are
+    copied onto the ancestor &mdash; editing any other, earlier-created task never touches that ancestor's dates,
+    no matter how many times it's saved afterwards.
+    <br><br>
+    Example: <code>Change Request &rarr; User Story &rarr; Task1, Task2</code> (Task2 created after Task1).
+    Saving Task2 pushes its dates to both User Story and Change Request, since Task2 is the most recently created
+    task under both of them. Saving Task1 afterwards does nothing at all to either parent &mdash; Task2 remains the
+    latest-created task regardless of which one gets edited, so the dates stay exactly as Task2 last set them.
+    This applies the same way across every project and every level of the parent chain.
   </p>
 </div>
