@@ -84,14 +84,6 @@
       </label>
     </div>
 
-    <div class="pcu-setting">
-      <label>Parent tracker names that trigger the child-creation popup</label>
-      <%= text_field_tag 'settings[parent_issue_types]',
-            @settings['parent_issue_types'] || 'Change Request,CR',
-            style: 'width:100%;max-width:520px;padding:6px;font-size:13px;' %>
-      <p class="pcu-hint">Comma-separated, case-insensitive. Example: <code>Change Request, CR</code></p>
-    </div>
-
   </div>
 </div>
 
@@ -153,25 +145,6 @@
       <%= text_field_tag 'settings[additional_child_trackers]',
             @settings['additional_child_trackers'] || 'Development Task,Testing Task',
             style: 'width:100%;max-width:420px;padding:6px;font-size:13px;' %>
-    </div>
-
-    <div class="pcu-setting">
-      <label class="inline">
-        <%= check_box_tag 'settings[create_dev_test_tasks]', '1',
-              @settings['create_dev_test_tasks'] == '1' %>
-        Auto-create Development &amp; Testing sub-tasks under the new child
-      </label>
-      <div style="margin-top:6px;padding-left:22px;">
-        <label style="font-size:12px;color:#555;">
-          Tracker for Development &amp; Testing sub-tasks:&nbsp;
-          <%= text_field_tag 'settings[dev_test_task_tracker]',
-                @settings['dev_test_task_tracker'].presence || 'Task',
-                style: 'width:180px;padding:4px 6px;font-size:12px;', placeholder: 'Task' %>
-        </label>
-        <em style="display:block;margin-top:3px;font-size:11px;color:#888;">
-          Tracker name used when creating Development &amp; Testing sub-tasks (case-insensitive). Default: <strong>Task</strong>
-        </em>
-      </div>
     </div>
 
   </div>

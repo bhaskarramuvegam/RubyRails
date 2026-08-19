@@ -21,22 +21,16 @@ Redmine::Plugin.register :redmine_parent_to_child_update do
     'enabled' => '1',
     'enable_logging' => '1',
     'auto_replicate_fields' => '1',
-    'parent_issue_types' => 'Change Request,CR,Bug,Feature,Task,Support',
     'replicated_fields' => 'priority,assigned_to,category,fixed_version,description,due_date,start_date,estimated_hours,custom_fields',
     'append_required_fields' => '1',
     'create_additional_children' => '1',
     'additional_child_trackers' => 'Development Task,Testing Task',
-    'create_dev_test_tasks' => '0',
-    'dev_test_task_tracker' => 'Task',
     # Hash: parent_tracker_id (string) => comma-separated child tracker names
     # e.g. { "3" => "User Story,Task", "5" => "Task" }
     'popup_child_trackers_by_parent' => {},
-    # Hash: tracker_id (string) => array of custom_field_id strings to show in popup
-    # e.g. { "3" => ["10", "11"], "5" => ["12"] }
+    # Hash: tracker_id (string) => array of field IDs controlling popup field order
     'tracker_popup_fields' => {},
     # Comma-separated field names to exclude from popup (matched case-insensitively by name)
-    'popup_excluded_fields' => 'Release Details',
-    # Comma-separated tracker names that trigger the child-creation chain popup (CR → US → Task)
-    'popup_parent_trackers' => 'Change Request,User Story'
+    'popup_excluded_fields' => 'Release Details'
   }, partial: 'settings/redmine_parent_to_child_update_settings'
 end
