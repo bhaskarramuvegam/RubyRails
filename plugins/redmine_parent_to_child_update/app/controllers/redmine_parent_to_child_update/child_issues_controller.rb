@@ -42,6 +42,22 @@ module RedmineParentToChildUpdate
         excluded_names = (plugin_settings['popup_excluded_fields'] || 'Release Details')
                            .split(',').map(&:strip).reject(&:empty?).map(&:downcase)
 
+        # ── Workflow field permissions for current user + tracker + new-issue status ──
+        # WorkflowPermission rules: 'required', 'readonly', 'hidden'
+        # For new issue creation use the default status (id=0 means "new issue" in Redmine).
+        workflow_rules = begin
+          roles      = User.current.roles_for_project(@issue.project).reject(&:anonymous?)
+          def_status = IssueStatus.find_by(is_default: true) || IssueStatus.first
+          if WorkflowPermission.respond_to?(:rules_by_column)
+            WorkflowPermission.rules_by_column(tracker_id, roles.map(&:id), def_status&.id.to_i)
+          else
+            {}
+          end
+        rescue => e
+          Rails.logger.warn("PCU workflow rules error: #{e.message}")
+          {}
+        end
+
         # ── Applicable standard fields for this tracker ──────────────────────
         # Only status, priority, assignee, author, description are universally present.
         # All other standard fields (category, version, dates, etc.) must be in
@@ -112,9 +128,13 @@ module RedmineParentToChildUpdate
             next unless defn
             field_name = defn[:name].respond_to?(:call) ? defn[:name].call : defn[:name]
             next if excluded_names.include?(field_name.to_s.downcase)
+            wf_rule = workflow_rules[key].to_s
+            next if wf_rule == 'hidden'
             opts = { id: "std_#{key}", std_key: key, name: field_name,
                      field_format: defn[:format], possible_values: [],
-                     default_value: '', value: '', is_required: false, is_standard: true }
+                     default_value: '', value: '', is_standard: true,
+                     is_required: (wf_rule == 'required'),
+                     is_readonly: (wf_rule == 'readonly') }
             case key
             when 'status_id'
               statuses = begin IssueStatus.respond_to?(:sorted) ? IssueStatus.sorted : IssueStatus.order(:position)
@@ -152,6 +172,8 @@ module RedmineParentToChildUpdate
             cf = applicable_cf_map[cf_id]   # nil if not applicable to this project
             next unless cf
             next if excluded_names.include?(cf.name.to_s.downcase)
+            cf_wf_rule = workflow_rules[cf.id.to_s].to_s
+            next if cf_wf_rule == 'hidden'
             pv = case cf.field_format
                  when 'list'
                    Array(cf.possible_values).map(&:to_s).reject(&:empty?)
@@ -169,7 +191,9 @@ module RedmineParentToChildUpdate
               possible_values: pv,
               default_value: cf.default_value.to_s,
               value: val_str,
-              is_required: cf.is_required, is_standard: false }
+              is_required: (cf_wf_rule == 'required' || (cf_wf_rule.empty? && cf.is_required)),
+              is_readonly: (cf_wf_rule == 'readonly'),
+              is_standard: false }
           end
         end
 
