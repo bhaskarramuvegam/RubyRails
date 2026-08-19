@@ -36,6 +36,9 @@
 .pcu-chip-remove  { background:none; border:none; cursor:pointer; font-size:15px;
                     line-height:1; color:#1565c0; padding:0; margin-left:2px; }
 .pcu-chip-remove:hover { color:#c62828; }
+.pcu-chip-move    { background:none; border:none; cursor:pointer; font-size:12px;
+                    line-height:1; color:#888; padding:0 1px; margin:0; }
+.pcu-chip-move:hover { color:#333; }
 .pcu-chips-empty  { color:#aaa; font-size:12px; font-style:italic; padding:4px 2px; }
 
 /* ── add-field row ───────────────────────────────────────────────────────── */
@@ -223,15 +226,16 @@
   # Names use Redmine's own i18n labels for exact match with the UI.
   pcu_all_std = [
     { key: 'status_id',        core_key: 'status_id',        name: l(:field_status)          },
-    { key: 'description',      core_key: 'description',      name: l(:field_description)     },
     { key: 'priority_id',      core_key: 'priority_id',      name: l(:field_priority)        },
     { key: 'assigned_to_id',   core_key: 'assigned_to_id',   name: l(:field_assigned_to)     },
+    { key: 'author_id',        core_key: 'author_id',        name: l(:field_author)          },
     { key: 'category_id',      core_key: 'category_id',      name: l(:field_category)        },
     { key: 'fixed_version_id', core_key: 'fixed_version_id', name: l(:field_fixed_version)   },
     { key: 'start_date',       core_key: 'start_date',       name: l(:field_start_date)      },
     { key: 'due_date',         core_key: 'due_date',         name: l(:field_due_date)        },
     { key: 'estimated_hours',  core_key: 'estimated_hours',  name: l(:field_estimated_hours) },
     { key: 'done_ratio',       core_key: 'done_ratio',       name: l(:field_done_ratio)      },
+    { key: 'description',      core_key: 'description',      name: l(:field_description)     },
   ]
 
   popup_cfg    = (@settings['tracker_popup_fields'] || {}).transform_keys(&:to_s)
@@ -244,9 +248,20 @@
     <p style="margin:0 0 14px;color:#555;font-size:13px;">
       For each child tracker, choose which fields appear in the <em>Create Child Tracker</em> popup.
       Fields default to <strong>all applicable fields</strong> for that tracker (matching the Redmine issue form).
-      Use <strong>+ Add</strong> to add a field, <strong>×</strong> to remove, or the
+      Use <strong>+ Add</strong> to add a field, <strong>×</strong> to remove, <strong>↑ ↓</strong> to reorder, or the
       <strong>Select All / Clear All</strong> buttons.
     </p>
+
+    <div class="pcu-setting" style="margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid #eee;">
+      <label>Excluded fields (by name)</label>
+      <%= text_field_tag 'settings[popup_excluded_fields]',
+            @settings['popup_excluded_fields'] || 'Release Details',
+            style: 'width:100%;max-width:520px;padding:6px;font-size:13px;' %>
+      <p class="pcu-hint">
+        Comma-separated field names to hide from popup across all trackers (e.g. <code>Release Details</code>).
+        Applies to both standard and custom fields matched by name (case-insensitive).
+      </p>
+    </div>
 
     <% if all_trackers.empty? %>
       <p class="pcu-no-trackers">No trackers found in this Redmine instance.</p>
@@ -261,8 +276,8 @@
           # Standard fields enabled for this tracker (via tracker.core_fields if available)
           tracker_core = tracker.respond_to?(:core_fields) ? Array(tracker.core_fields).map(&:to_s) : []
           pcu_std = pcu_all_std.select { |f|
-            # status, description and priority are always shown in Redmine issue form
-            %w[status_id description priority_id].include?(f[:core_key]) ||
+            # these fields are always available regardless of tracker.core_fields
+            %w[status_id priority_id assigned_to_id author_id description].include?(f[:core_key]) ||
             tracker_core.include?(f[:core_key])
           }
 
@@ -305,27 +320,29 @@
           <%# ── accordion body ───────────────────────────────────────────── %>
           <div class="pcu-tracker-bd" id="pcu-body-<%= tid %>">
 
-            <%# Hidden checkboxes for ALL standard fields for this tracker %>
-            <% pcu_std.each do |sf| %>
-              <%= check_box_tag "settings[tracker_popup_fields][#{tid}][]",
-                    "std_#{sf[:key]}",
-                    sel_std_keys.include?(sf[:key]),
-                    id:    "pcu-cb-#{tid}-std_#{sf[:key]}",
-                    class: 'pcu-hidden-cb',
-                    style: 'display:none',
-                    data:  { tid: tid, fid: "std_#{sf[:key]}", name: sf[:name], required: '0', ftype: 'std' } %>
-            <% end %>
+            <%# Hidden checkboxes — wrapped in a container so pcuMoveChip can reorder them to match chip order %>
+            <div id="pcu-cb-container-<%= tid %>" style="display:none">
 
-            <%# Hidden checkboxes for ALL custom fields for this tracker %>
-            <% all_cfs.each do |cf| %>
-              <%= check_box_tag "settings[tracker_popup_fields][#{tid}][]",
-                    cf.id.to_s,
-                    sel_cf_ids.include?(cf.id.to_s),
-                    id:    "pcu-cb-#{tid}-cf_#{cf.id}",
-                    class: 'pcu-hidden-cb',
-                    style: 'display:none',
-                    data:  { tid: tid, fid: "cf_#{cf.id}", name: cf.name, required: cf.is_required ? '1' : '0', ftype: 'cf' } %>
-            <% end %>
+              <%# Standard fields first, then custom fields (Redmine form order for defaults) %>
+              <% pcu_std.each do |sf| %>
+                <%= check_box_tag "settings[tracker_popup_fields][#{tid}][]",
+                      "std_#{sf[:key]}",
+                      sel_std_keys.include?(sf[:key]),
+                      id:    "pcu-cb-#{tid}-std_#{sf[:key]}",
+                      class: 'pcu-hidden-cb',
+                      data:  { tid: tid, fid: "std_#{sf[:key]}", name: sf[:name], required: '0', ftype: 'std' } %>
+              <% end %>
+
+              <% all_cfs.each do |cf| %>
+                <%= check_box_tag "settings[tracker_popup_fields][#{tid}][]",
+                      cf.id.to_s,
+                      sel_cf_ids.include?(cf.id.to_s),
+                      id:    "pcu-cb-#{tid}-cf_#{cf.id}",
+                      class: 'pcu-hidden-cb',
+                      data:  { tid: tid, fid: "cf_#{cf.id}", name: cf.name, required: cf.is_required ? '1' : '0', ftype: 'cf' } %>
+              <% end %>
+
+            </div>
 
             <%# Action buttons %>
             <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;">
@@ -345,6 +362,10 @@
               <% end %>
               <% sel_std.each do |sf| %>
                 <span class="pcu-chip" id="pcu-chip-<%= tid %>-std_<%= sf[:key] %>">
+                  <button type="button" class="pcu-chip-move" title="Move up"
+                          onclick="pcuMoveChip(<%= tid.inspect %>, 'std_<%= sf[:key] %>', 'up')">↑</button>
+                  <button type="button" class="pcu-chip-move" title="Move down"
+                          onclick="pcuMoveChip(<%= tid.inspect %>, 'std_<%= sf[:key] %>', 'down')">↓</button>
                   <%= sf[:name] %>
                   <span style="font-size:10px;background:#1976D2;color:#fff;border-radius:3px;padding:1px 4px;margin-left:4px;">standard</span>
                   <button type="button" class="pcu-chip-remove" title="Remove"
@@ -353,6 +374,10 @@
               <% end %>
               <% sel_cfs.each do |cf| %>
                 <span class="pcu-chip" id="pcu-chip-<%= tid %>-cf_<%= cf.id %>">
+                  <button type="button" class="pcu-chip-move" title="Move up"
+                          onclick="pcuMoveChip(<%= tid.inspect %>, 'cf_<%= cf.id %>', 'up')">↑</button>
+                  <button type="button" class="pcu-chip-move" title="Move down"
+                          onclick="pcuMoveChip(<%= tid.inspect %>, 'cf_<%= cf.id %>', 'down')">↓</button>
                   <%= cf.name %>
                   <% if cf.is_required %>
                     <span class="pcu-chip-req">required</span>
@@ -452,14 +477,19 @@ function pcuAdd(tid) {
   var empty = document.getElementById('pcu-empty-' + tid);
   if (empty) empty.style.display = 'none';
 
-  /* build chip — pass fid as quoted string to pcuRemove */
+  /* build chip with move buttons */
   var chip = document.createElement('span');
   chip.className = 'pcu-chip';
   chip.id        = 'pcu-chip-' + tid + '-' + fid;
+  var tidJ = JSON.stringify(tid), fidJ = JSON.stringify(fid);
   chip.innerHTML =
-    pcuEsc(fName) + ' ' + badgeHtml +
+    '<button type="button" class="pcu-chip-move" title="Move up"' +
+    '        onclick="pcuMoveChip(' + tidJ + ',' + fidJ + ',\'up\')">&#8593;</button>' +
+    '<button type="button" class="pcu-chip-move" title="Move down"' +
+    '        onclick="pcuMoveChip(' + tidJ + ',' + fidJ + ',\'down\')">&#8595;</button>' +
+    ' ' + pcuEsc(fName) + ' ' + badgeHtml +
     ' <button type="button" class="pcu-chip-remove" title="Remove"' +
-    '         onclick="pcuRemove(' + JSON.stringify(tid) + ',' + JSON.stringify(fid) + ')">&#215;</button>';
+    '         onclick="pcuRemove(' + tidJ + ',' + fidJ + ')">&#215;</button>';
   document.getElementById('pcu-chips-' + tid).appendChild(chip);
 
   pcuUpdateCount(tid);
@@ -575,6 +605,42 @@ function pcuClearAll(tid) {
     if (id.indexOf(prefix) === 0) fids.push(id.slice(prefix.length));
   });
   fids.forEach(function(fid) { pcuRemove(tid, fid); });
+}
+
+/* ── Reorder chip (and matching hidden checkbox) ────────────────────────── */
+function pcuMoveChip(tid, fid, dir) {
+  var chipsBox = document.getElementById('pcu-chips-' + tid);
+  var chip     = document.getElementById('pcu-chip-' + tid + '-' + fid);
+  if (!chipsBox || !chip) return;
+
+  var chips = Array.from(chipsBox.querySelectorAll('.pcu-chip'));
+  var idx   = chips.indexOf(chip);
+
+  if (dir === 'up' && idx > 0) {
+    chipsBox.insertBefore(chip, chips[idx - 1]);
+  } else if (dir === 'down' && idx < chips.length - 1) {
+    chipsBox.insertBefore(chips[idx + 1], chip);
+  } else {
+    return; // already at boundary
+  }
+
+  /* reorder hidden checkboxes to match chip order so form submits in the right sequence */
+  var cbContainer = document.getElementById('pcu-cb-container-' + tid);
+  if (!cbContainer) return;
+
+  /* move checked checkboxes first, in chip order */
+  var newChips = Array.from(chipsBox.querySelectorAll('.pcu-chip'));
+  newChips.forEach(function(c) {
+    var prefix  = 'pcu-chip-' + tid + '-';
+    var chipFid = c.id.slice(prefix.length);
+    var cb      = document.getElementById('pcu-cb-' + tid + '-' + chipFid);
+    if (cb && cb.checked) cbContainer.appendChild(cb);
+  });
+  /* append unchecked checkboxes after (order irrelevant — they won't submit) */
+  var allCbs = cbContainer.querySelectorAll('input[type=checkbox]');
+  allCbs.forEach(function(cb) {
+    if (!cb.checked) cbContainer.appendChild(cb);
+  });
 }
 
 /* ── HTML-escape helper ─────────────────────────────────────────────────── */

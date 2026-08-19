@@ -33,6 +33,8 @@ Redmine::Plugin.register :redmine_parent_to_child_update do
     'popup_child_trackers_by_parent' => {},
     # Hash: tracker_id (string) => array of custom_field_id strings to show in popup
     # e.g. { "3" => ["10", "11"], "5" => ["12"] }
-    'tracker_popup_fields' => {}
+    'tracker_popup_fields' => {},
+    # Comma-separated field names to exclude from popup (matched case-insensitively by name)
+    'popup_excluded_fields' => 'Release Details'
   }, partial: 'settings/redmine_parent_to_child_update_settings'
 end
