@@ -85,17 +85,18 @@ module RedmineParentToChildUpdate
       return unless controller && controller.session
       return unless User.current.allowed_to?(:add_issues, issue.project)
 
+      # ── Auto-open flag — consume session key BEFORE any early returns ────────
+      # Must delete here so the key is never left dangling if we return early.
+      scheduled_id = controller.session.delete(:redmine_parent_to_child_show_prompt_for)
+      auto_open    = scheduled_id.to_i == issue.id.to_i
+
       # ── Filter tracker dropdown by per-parent-tracker plugin setting ─────────
       trackers_map    = Setting.plugin_redmine_parent_to_child_update['popup_child_trackers_by_parent'] || {}
       child_filter    = trackers_map[issue.tracker.id.to_s].to_s
                           .split(',').map(&:strip).reject(&:empty?)
       trackers = issue.available_child_trackers
       trackers = trackers.select { |t| child_filter.any? { |n| n.casecmp(t.name) == 0 } } if child_filter.any?
-      return if trackers.empty?
-
-      # ── Auto-open flag (CR creation flow) ─────────────────────────────────
-      scheduled_id = controller.session.delete(:redmine_parent_to_child_show_prompt_for)
-      auto_open    = scheduled_id.to_i == issue.id.to_i
+      return if trackers.empty? && !auto_open
 
       safe_subject = ERB::Util.html_escape(issue.subject.to_s)
 
@@ -280,8 +281,8 @@ module RedmineParentToChildUpdate
       output << "  pcuLoadRequiredFields(parentId);"
       output << "  var tid=document.getElementById('pcu-tracker-select').value;"
       output << "  var info=pcuTrackerInfo[tid]||{c:false,term:true};"
-      # Terminal tracker (e.g. Task) = no chain, so never show "Save & Create Child Tracker"
-      output << "  var showChain=info.c&&!info.term;"
+      # Show "Save & Create Child Tracker" for any tracker listed in popup_parent_trackers (not terminal)
+      output << "  var showChain=!info.term;"
       output << "  var sc=document.getElementById('pcu-btn-save-child');"
       output << "  var saveBtn=document.getElementById('pcu-btn-save');"
       output << "  var closeBtn=document.getElementById('pcu-btn-close');"

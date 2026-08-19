@@ -149,10 +149,23 @@ module RedmineParentToChildUpdate
             cf = applicable_cf_map[cf_id]   # nil if not applicable to this project
             next unless cf
             next if excluded_names.include?(cf.name.to_s.downcase)
-            { id: cf.id, name: cf.name, field_format: cf.field_format,
-              possible_values: cf.field_format == 'list' ? cf.possible_values : [],
+            pv = case cf.field_format
+                 when 'list'
+                   Array(cf.possible_values).map(&:to_s).reject(&:empty?)
+                 when 'enumeration'
+                   # CustomFieldEnumeration-backed list
+                   cf.respond_to?(:enumerations) ?
+                     cf.enumerations.active.map { |e| e.name.to_s } :
+                     Array(cf.possible_values).map(&:to_s).reject(&:empty?)
+                 else
+                   []
+                 end
+            raw_val = @issue.custom_field_value(cf.id)
+            val_str = raw_val.is_a?(Array) ? Array(raw_val).reject(&:empty?).first.to_s : raw_val.to_s
+            { id: cf.id, name: cf.name, field_format: pv.any? ? 'list' : cf.field_format,
+              possible_values: pv,
               default_value: cf.default_value.to_s,
-              value: @issue.custom_field_value(cf.id).to_s,
+              value: val_str,
               is_required: cf.is_required, is_standard: false }
           end
         end
