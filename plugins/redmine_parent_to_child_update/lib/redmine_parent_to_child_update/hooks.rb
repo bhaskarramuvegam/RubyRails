@@ -278,14 +278,19 @@ module RedmineParentToChildUpdate
 
       # Update buttons and load fields when tracker changes
       output << "function pcuOnTrackerChange(parentId){"
+      output << "  var tid=document.getElementById('pcu-tracker-select').value;"
+      output << "  var info=pcuTrackerInfo[tid]||{c:false,term:true};"
       output << "  var sc=document.getElementById('pcu-btn-save-child');"
       output << "  var saveBtn=document.getElementById('pcu-btn-save');"
       output << "  var closeBtn=document.getElementById('pcu-btn-close');"
-      # Always show all 4 buttons when current issue is a parent tracker (CR or User Story)
+      # Show "Save & Create Child" only when current issue is a parent tracker AND
+      # the selected child tracker is also a chain parent (not terminal, e.g. User Story).
+      # When Task is selected (terminal), hide the button.
       if current_is_parent
-        output << "  if(sc) sc.style.display='';"
+        output << "  var showChain=!info.term;"
+        output << "  if(sc) sc.style.display=(showChain?'':'none');"
         output << "  if(saveBtn) saveBtn.textContent='Save Tracker';"
-        output << "  if(closeBtn) closeBtn.textContent='Close';"
+        output << "  if(closeBtn) closeBtn.textContent=(showChain?'Close':'Cancel');"
       else
         output << "  if(sc) sc.style.display='none';"
         output << "  if(saveBtn) saveBtn.textContent='Save';"
