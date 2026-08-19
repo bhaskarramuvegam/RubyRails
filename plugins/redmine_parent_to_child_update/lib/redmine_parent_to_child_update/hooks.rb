@@ -58,8 +58,8 @@ module RedmineParentToChildUpdate
       return unless issue.tracker
       # Never auto-popup for issues that already have a parent (child issues)
       return if issue.parent_id.present?
-      # Only schedule popup for configured parent-tracker types (e.g. Change Request)
-      return unless issue.popup_parent_tracker_names.any? { |n| n.casecmp?(issue.tracker.name) }
+      # Only schedule popup for hardcoded parent-tracker types
+      return unless %w[change\ request user\ story].any? { |n| n.casecmp?(issue.tracker.name) }
       return unless controller && controller.session
 
       controller.session[:redmine_parent_to_child_show_prompt_for] = issue.id.to_i
@@ -160,10 +160,10 @@ module RedmineParentToChildUpdate
       # Trackers that have children configured → show "Save & Create Child Tracker" button
       trackers_with_children = (Setting.plugin_redmine_parent_to_child_update['popup_child_trackers_by_parent'] || {})
                                  .select { |_, v| v.to_s.strip.present? }.keys.map(&:to_s)
-      # Terminal tracker names (no chain popup ever shown) — comes from popup_parent_trackers setting
-      # Any tracker NOT listed as a parent in the chain is treated as terminal (e.g. Task)
-      popup_parent_names_set = Setting.plugin_redmine_parent_to_child_update['popup_parent_trackers'].to_s
-                                 .split(',').map(&:strip).reject(&:empty?).map(&:downcase)
+      # Hardcoded parent tracker names — these always get "Save & Create Child Tracker" button
+      popup_parent_names_set = %w[change\ request user\ story]
+      # Current issue is itself a parent tracker → always show chain buttons
+      current_is_parent = popup_parent_names_set.any? { |n| n.casecmp?(issue.tracker.name) }
 
       # JS map: tracker_id => { hasChildren, isTerminal }
       tracker_has_children_js = trackers.map { |t|
@@ -278,17 +278,20 @@ module RedmineParentToChildUpdate
 
       # Update buttons and load fields when tracker changes
       output << "function pcuOnTrackerChange(parentId){"
-      output << "  pcuLoadRequiredFields(parentId);"
-      output << "  var tid=document.getElementById('pcu-tracker-select').value;"
-      output << "  var info=pcuTrackerInfo[tid]||{c:false,term:true};"
-      # Show "Save & Create Child Tracker" for any tracker listed in popup_parent_trackers (not terminal)
-      output << "  var showChain=!info.term;"
       output << "  var sc=document.getElementById('pcu-btn-save-child');"
       output << "  var saveBtn=document.getElementById('pcu-btn-save');"
       output << "  var closeBtn=document.getElementById('pcu-btn-close');"
-      output << "  if(sc) sc.style.display=(showChain?'':'none');"
-      output << "  if(saveBtn) saveBtn.textContent=(showChain?'Save Tracker':'Save');"
-      output << "  if(closeBtn) closeBtn.textContent=(showChain?'Close':'Cancel');"
+      # Always show all 4 buttons when current issue is a parent tracker (CR or User Story)
+      if current_is_parent
+        output << "  if(sc) sc.style.display='';"
+        output << "  if(saveBtn) saveBtn.textContent='Save Tracker';"
+        output << "  if(closeBtn) closeBtn.textContent='Close';"
+      else
+        output << "  if(sc) sc.style.display='none';"
+        output << "  if(saveBtn) saveBtn.textContent='Save';"
+        output << "  if(closeBtn) closeBtn.textContent='Cancel';"
+      end
+      output << "  pcuLoadRequiredFields(parentId);"
       output << "}"
 
       # Load admin-configured popup fields for selected tracker
