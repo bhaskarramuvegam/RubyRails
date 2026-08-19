@@ -43,16 +43,26 @@ module RedmineParentToChildUpdate
                            .split(',').map(&:strip).reject(&:empty?).map(&:downcase)
 
         # ── Workflow field permissions for current user + tracker + new-issue status ──
-        # WorkflowPermission rules: 'required', 'readonly', 'hidden'
-        # For new issue creation use the default status (id=0 means "new issue" in Redmine).
+        # Query WorkflowPermission directly (avoids version-specific API differences).
+        # Rule precedence when multiple roles apply: hidden > readonly > required.
         workflow_rules = begin
-          roles      = User.current.roles_for_project(@issue.project).reject(&:anonymous?)
+          role_ids   = User.current.roles_for_project(@issue.project)
+                           .reject(&:anonymous?).map(&:id)
           def_status = IssueStatus.find_by(is_default: true) || IssueStatus.first
-          if WorkflowPermission.respond_to?(:rules_by_column)
-            WorkflowPermission.rules_by_column(tracker_id, roles.map(&:id), def_status&.id.to_i)
-          else
-            {}
+          perms = WorkflowPermission.where(
+            tracker_id:    tracker_id,
+            role_id:       role_ids,
+            old_status_id: def_status&.id
+          )
+          rule_priority = { 'hidden' => 3, 'readonly' => 2, 'required' => 1 }
+          rules = {}
+          perms.each do |wp|
+            existing = rules[wp.field_name]
+            if existing.nil? || rule_priority[wp.rule].to_i > rule_priority[existing].to_i
+              rules[wp.field_name] = wp.rule
+            end
           end
+          rules
         rescue => e
           Rails.logger.warn("PCU workflow rules error: #{e.message}")
           {}
