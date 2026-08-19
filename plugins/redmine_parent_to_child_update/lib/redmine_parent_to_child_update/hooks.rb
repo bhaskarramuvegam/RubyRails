@@ -495,17 +495,26 @@ module RedmineParentToChildUpdate
       output << "  }"
       output << "}"
 
-      # DOMContentLoaded — move modal to <body> so position:fixed works correctly,
-      # then auto-open for CR flow and inject the subtask button
-      output << "document.addEventListener('DOMContentLoaded',function(){"
-      output << "  var modal=document.getElementById('pcu-child-modal');"
-      output << "  if(modal&&modal.parentNode!==document.body) document.body.appendChild(modal);"
+      # Move modal to <body> and auto-open for CR flow.
+      # Use readyState check instead of just DOMContentLoaded: with Turbolinks/Hotwire
+      # navigation DOMContentLoaded may already have fired when this inline script runs,
+      # so the listener would never be called. Calling immediately when readyState is
+      # already 'interactive' or 'complete' handles both cases.
+      output << "(function(){"
+      output << "  function pcuInitModal(){"
+      output << "    var modal=document.getElementById('pcu-child-modal');"
+      output << "    if(!modal) return;"
+      output << "    if(modal.parentNode!==document.body) document.body.appendChild(modal);"
       if auto_open
-        output << "  modal.style.display='block';"
-        output << "  pcuOnTrackerChange(#{issue.id});"
+        output << "    modal.style.display='block';"
+        output << "    pcuOnTrackerChange(#{issue.id});"
       end
-      output << "  pcuInjectSubtaskButton(#{issue.id});"
-      output << "});"
+      output << "    pcuInjectSubtaskButton(#{issue.id});"
+      output << "  }"
+      output << "  if(document.readyState==='loading'){"
+      output << "    document.addEventListener('DOMContentLoaded',pcuInitModal);"
+      output << "  } else { pcuInitModal(); }"
+      output << "})();"
 
       output << "</script>"
       output.html_safe
