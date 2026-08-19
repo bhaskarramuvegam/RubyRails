@@ -237,9 +237,25 @@ module RedmineParentToChildUpdate
           end
         end
         if primary_child.save
-          # Attach uploaded files using Redmine's built-in attachment mechanism
-          if params[:attachments].present? && primary_child.respond_to?(:save_attachments)
-            primary_child.save_attachments(params[:attachments])
+          # save_attachments expects a Hash but params[:attachments] is ActionController::Parameters
+          # in Rails 5+, which fails the is_a?(Hash) check inside save_attachments silently.
+          # Use Attachment.create! directly instead.
+          if params[:attachments].present?
+            params[:attachments].each do |_idx, att_params|
+              file = att_params[:file]
+              next unless file.respond_to?(:read)
+              begin
+                Attachment.create!(
+                  container:   primary_child,
+                  file:        file,
+                  filename:    att_params[:filename].presence || file.original_filename,
+                  description: att_params[:description].to_s,
+                  author:      User.current
+                )
+              rescue => e
+                Rails.logger.error("PCU attachment error: #{e.message}")
+              end
+            end
           end
           created_children << primary_child
         else
