@@ -37,57 +37,72 @@ module RedmineParentToChildUpdate
       begin
         plugin_settings  = Setting.plugin_redmine_parent_to_child_update || {}
         popup_fields_cfg = plugin_settings['tracker_popup_fields'] || {}
-        configured_ids   = Array(popup_fields_cfg[tracker_id.to_s]).map(&:to_s).uniq
 
-        # Fields excluded by admin (comma-separated names)
+        # Excluded field names (admin config, matched by name case-insensitively)
         excluded_names = (plugin_settings['popup_excluded_fields'] || 'Release Details')
                            .split(',').map(&:strip).reject(&:empty?).map(&:downcase)
 
-        all_tracker_cfs     = tracker.custom_fields.order(:position).to_a
-        all_tracker_cfs_map = all_tracker_cfs.index_by(&:id)
+        # ── Applicable standard fields for this tracker ──────────────────────
+        tracker_core     = tracker.respond_to?(:core_fields) ? Array(tracker.core_fields).map(&:to_s) : []
+        always_std       = %w[status_id priority_id assigned_to_id author_id category_id
+                              fixed_version_id start_date due_date estimated_hours done_ratio description]
+        applicable_std_keys = STANDARD_POPUP_FIELDS.keys.select { |k|
+          always_std.include?(k) || tracker_core.include?(k)
+        }
 
-        if configured_ids.empty?
-          # Never configured → default: all standard fields enabled for this tracker,
-          # then all custom fields ordered by position (matching Redmine form order)
-          tracker_core = tracker.respond_to?(:core_fields) ? Array(tracker.core_fields).map(&:to_s) : []
-          always_std   = %w[status_id priority_id assigned_to_id author_id category_id
-                            fixed_version_id start_date due_date estimated_hours done_ratio description]
-          std_fids = STANDARD_POPUP_FIELDS.keys
-                       .select { |k| always_std.include?(k) || tracker_core.include?(k) }
-                       .map    { |k| "std_#{k}" }
-          cf_fids  = all_tracker_cfs.map { |cf| cf.id.to_s }
-          ordered_ids = std_fids + cf_fids
+        # ── Applicable custom fields: tracker CFs enabled for this project ───
+        # Redmine's is_for_all=true → all projects; false → only listed projects.
+        # This mirrors exactly what fields appear on the Redmine issue form for this project.
+        project_id = @issue.project.id
+        applicable_cfs = tracker.custom_fields.order(:position).select { |cf|
+          cf.is_for_all? || cf.project_ids.include?(project_id)
+        }
+        applicable_cf_map = applicable_cfs.index_by(&:id)  # id => cf
+
+        # ── Determine display order (plugin config = order only, NOT gate) ───
+        # Stored ids use "std_<key>" for standard fields and plain "<cf_id>" for custom fields.
+        configured_ids = Array(popup_fields_cfg[tracker_id.to_s]).map(&:to_s).uniq
+
+        if configured_ids.any?
+          # Filter configured order to only include fields actually applicable to this project
+          ordered_ids = configured_ids.select { |fid|
+            if fid.start_with?('std_')
+              applicable_std_keys.include?(fid.sub('std_', ''))
+            else
+              cf_id = fid.sub(/\Acf_/, '').to_i
+              applicable_cf_map.key?(cf_id)
+            end
+          }
+          # Append any applicable fields added AFTER the config was last saved (new CFs, etc.)
+          in_order = ordered_ids.to_set
+          applicable_std_keys.each do |k|
+            fid = "std_#{k}"; ordered_ids << fid unless in_order.include?(fid)
+          end
+          applicable_cfs.each do |cf|
+            fid = cf.id.to_s
+            ordered_ids << fid unless in_order.include?(fid) || in_order.include?("cf_#{cf.id}")
+          end
         else
-          ordered_ids = configured_ids
+          # No config saved: std fields in STANDARD_POPUP_FIELDS order, then CFs by position
+          ordered_ids = applicable_std_keys.map { |k| "std_#{k}" } +
+                        applicable_cfs.map { |cf| cf.id.to_s }
         end
 
-        # ── Build fields in the exact stored/default order ───────────────────
-        # This preserves the sequence the admin configured (or the Redmine form order by default)
+        # ── Build field objects in order ─────────────────────────────────────
         all_fields = ordered_ids.filter_map do |fid|
           if fid.start_with?('std_')
             key  = fid.sub('std_', '')
             defn = STANDARD_POPUP_FIELDS[key]
             next unless defn
-
             field_name = defn[:name].respond_to?(:call) ? defn[:name].call : defn[:name]
             next if excluded_names.include?(field_name.to_s.downcase)
-
-            opts = {
-              id:              "std_#{key}",
-              std_key:         key,
-              name:            field_name,
-              field_format:    defn[:format],
-              possible_values: [],
-              default_value:   '',
-              value:           '',
-              is_required:     false,
-              is_standard:     true
-            }
+            opts = { id: "std_#{key}", std_key: key, name: field_name,
+                     field_format: defn[:format], possible_values: [],
+                     default_value: '', value: '', is_required: false, is_standard: true }
             case key
             when 'status_id'
-              statuses = begin
-                IssueStatus.respond_to?(:sorted) ? IssueStatus.sorted : IssueStatus.order(:position)
-              rescue; IssueStatus.all; end
+              statuses = begin IssueStatus.respond_to?(:sorted) ? IssueStatus.sorted : IssueStatus.order(:position)
+                         rescue; IssueStatus.all; end
               opts[:possible_values] = statuses.map { |s| { value: s.id.to_s, label: s.name } }
               default_status = (IssueStatus.find_by(is_default: true) rescue nil) || IssueStatus.first
               opts[:value] = default_status&.id.to_s || ''
@@ -118,19 +133,14 @@ module RedmineParentToChildUpdate
           else
             cf_id = fid.sub(/\Acf_/, '').to_i
             next unless cf_id > 0
-            cf = all_tracker_cfs_map[cf_id]
+            cf = applicable_cf_map[cf_id]   # nil if not applicable to this project
             next unless cf
             next if excluded_names.include?(cf.name.to_s.downcase)
-            {
-              id:              cf.id,
-              name:            cf.name,
-              field_format:    cf.field_format,
+            { id: cf.id, name: cf.name, field_format: cf.field_format,
               possible_values: cf.field_format == 'list' ? cf.possible_values : [],
-              default_value:   cf.default_value.to_s,
-              value:           @issue.custom_field_value(cf.id).to_s,
-              is_required:     cf.is_required,
-              is_standard:     false
-            }
+              default_value: cf.default_value.to_s,
+              value: @issue.custom_field_value(cf.id).to_s,
+              is_required: cf.is_required, is_standard: false }
           end
         end
 
