@@ -98,7 +98,8 @@ module RedmineParentToChildUpdate
       trackers = trackers.select { |t| child_filter.any? { |n| n.casecmp(t.name) == 0 } } if child_filter.any?
       return if trackers.empty? && !auto_open
 
-      safe_subject = ERB::Util.html_escape(issue.subject.to_s)
+      safe_subject      = ERB::Util.html_escape(issue.subject.to_s)
+      safe_tracker_name = ERB::Util.html_escape(issue.tracker.name.to_s)
 
       output = +""
 
@@ -187,7 +188,7 @@ module RedmineParentToChildUpdate
 
       # Body
       output << "  <div class='pcu-modal-body'>"
-      output << "    <p class='pcu-desc'>Create a child tracker under <strong>##{issue.id} &ndash; #{safe_subject}</strong>.</p>"
+      output << "    <p class='pcu-desc'>Create a child tracker under <strong>#{safe_tracker_name} ##{issue.id} &ndash; #{safe_subject}</strong>.</p>"
 
       # Tracker type + Subject in a 2-column top row
       output << "    <div class='pcu-top-row'>"
