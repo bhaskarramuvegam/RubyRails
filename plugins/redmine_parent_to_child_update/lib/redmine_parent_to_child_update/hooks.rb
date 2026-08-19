@@ -163,7 +163,6 @@ module RedmineParentToChildUpdate
       # Any tracker NOT listed as a parent in the chain is treated as terminal (e.g. Task)
       popup_parent_names_set = Setting.plugin_redmine_parent_to_child_update['popup_parent_trackers'].to_s
                                  .split(',').map(&:strip).reject(&:empty?).map(&:downcase)
-      popup_parent_names_set = ['change request', 'user story'] if popup_parent_names_set.empty?
 
       # JS map: tracker_id => { hasChildren, isTerminal }
       tracker_has_children_js = trackers.map { |t|

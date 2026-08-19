@@ -35,6 +35,8 @@ Redmine::Plugin.register :redmine_parent_to_child_update do
     # e.g. { "3" => ["10", "11"], "5" => ["12"] }
     'tracker_popup_fields' => {},
     # Comma-separated field names to exclude from popup (matched case-insensitively by name)
-    'popup_excluded_fields' => 'Release Details'
+    'popup_excluded_fields' => 'Release Details',
+    # Comma-separated tracker names that trigger the child-creation chain popup (CR → US → Task)
+    'popup_parent_trackers' => 'Change Request,User Story'
   }, partial: 'settings/redmine_parent_to_child_update_settings'
 end

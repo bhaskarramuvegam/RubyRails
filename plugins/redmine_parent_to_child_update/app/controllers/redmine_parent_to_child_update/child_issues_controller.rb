@@ -43,12 +43,25 @@ module RedmineParentToChildUpdate
                            .split(',').map(&:strip).reject(&:empty?).map(&:downcase)
 
         # ── Applicable standard fields for this tracker ──────────────────────
-        tracker_core     = tracker.respond_to?(:core_fields) ? Array(tracker.core_fields).map(&:to_s) : []
-        always_std       = %w[status_id priority_id assigned_to_id author_id category_id
-                              fixed_version_id start_date due_date estimated_hours done_ratio description]
+        # Only status, priority, assignee, author, description are universally present.
+        # All other standard fields (category, version, dates, etc.) must be in
+        # tracker.core_fields — exactly the same gate Redmine uses on the issue form.
+        tracker_core = tracker.respond_to?(:core_fields) ? Array(tracker.core_fields).map(&:to_s) : []
+        always_std   = %w[status_id priority_id assigned_to_id author_id description]
         applicable_std_keys = STANDARD_POPUP_FIELDS.keys.select { |k|
           always_std.include?(k) || tracker_core.include?(k)
         }
+
+        # Additionally hide category/version when the project has none configured —
+        # prevents an empty dropdown that can never be filled.
+        if applicable_std_keys.include?('category_id') &&
+           @issue.project.issue_categories.empty?
+          applicable_std_keys -= ['category_id']
+        end
+        if applicable_std_keys.include?('fixed_version_id') &&
+           !@issue.project.shared_versions.open.exists?
+          applicable_std_keys -= ['fixed_version_id']
+        end
 
         # ── Applicable custom fields: tracker CFs enabled for this project ───
         # Redmine's is_for_all=true → all projects; false → only listed projects.
@@ -267,7 +280,6 @@ module RedmineParentToChildUpdate
 
         raw_parent_trackers       = Setting.plugin_redmine_parent_to_child_update['popup_parent_trackers'].to_s
         popup_parent_names        = raw_parent_trackers.split(',').map(&:strip).reject(&:empty?)
-        popup_parent_names        = ['Change Request', 'CR'] if popup_parent_names.empty?
         current_parent_is_chain   = popup_parent_names.any? { |n| n.casecmp?(@issue.tracker.name) }
 
         if !skip_chain && child_tracker_filter.present? && current_parent_is_chain
