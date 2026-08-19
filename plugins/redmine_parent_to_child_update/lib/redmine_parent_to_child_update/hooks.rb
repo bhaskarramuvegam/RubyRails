@@ -363,6 +363,7 @@ module RedmineParentToChildUpdate
       # Tag inputs with either std_key or cf_id so pcuCreateChild knows how to submit them
       output << "      if(cf.is_standard){ inp.dataset.stdKey=cf.std_key; } else { inp.dataset.cfId=cf.id; }"
       output << "      inp.dataset.required=cf.is_required?'1':'0';"
+      output << "      if(inp.type==='number'){inp.addEventListener('wheel',function(e){e.preventDefault();},{passive:false});}"
       output << "      inp.className='pcu-req-cf'; w.appendChild(inp); box.appendChild(w);"
       output << "    });"
       output << "  }).catch(function(err){ pcuShowStatus('Field load failed: '+err.message,'#fdecea','#c62828'); });"
