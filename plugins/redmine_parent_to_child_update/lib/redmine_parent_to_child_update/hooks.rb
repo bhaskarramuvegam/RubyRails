@@ -108,9 +108,9 @@ module RedmineParentToChildUpdate
       output << "  width:100%;height:100%;background:rgba(0,0,0,0.55);"
       output << "  font-family:Arial,sans-serif;overflow-y:auto;}"
       output << "#pcu-child-modal .pcu-modal-box{"
-      output << "  background:#fff;margin:1.5% auto;padding:0;"
-      output << "  border-radius:6px;width:1100px;max-width:97%;"
-      output << "  box-shadow:0 6px 24px rgba(0,0,0,0.25);max-height:95vh;overflow-y:auto;}"
+      output << "  background:#fff;margin:1% auto;padding:0;"
+      output << "  border-radius:6px;width:1340px;max-width:98%;"
+      output << "  box-shadow:0 6px 24px rgba(0,0,0,0.25);max-height:97vh;overflow-y:auto;}"
       output << ".pcu-modal-header{"
       output << "  display:flex;align-items:center;justify-content:space-between;"
       output << "  padding:12px 20px 10px;border-bottom:1px solid #eee;}"
@@ -122,7 +122,7 @@ module RedmineParentToChildUpdate
       # Top section: tracker + subject side by side
       output << ".pcu-top-row{display:grid;grid-template-columns:1fr 2fr;gap:12px;margin-bottom:10px;}"
       # Fields grid: 3 columns for compact layout
-      output << "#pcu-required-fields{display:grid;grid-template-columns:repeat(3,1fr);gap:10px 14px;"
+      output << "#pcu-required-fields{display:grid;grid-template-columns:repeat(4,1fr);gap:10px 14px;"
       output << "  align-items:start;}"
       # Override: text/textarea fields span full width
       output << "#pcu-required-fields .pcu-field-full{grid-column:1/-1;}"
@@ -159,9 +159,20 @@ module RedmineParentToChildUpdate
       # Trackers that have children configured → show "Save & Create Child Tracker" button
       trackers_with_children = (Setting.plugin_redmine_parent_to_child_update['popup_child_trackers_by_parent'] || {})
                                  .select { |_, v| v.to_s.strip.present? }.keys.map(&:to_s)
-      # Build a JS-safe map of tracker_id => has_children (bool)
+      # Terminal tracker names (no chain popup ever shown) — comes from popup_parent_trackers setting
+      # Any tracker NOT listed as a parent in the chain is treated as terminal (e.g. Task)
+      popup_parent_names_set = Setting.plugin_redmine_parent_to_child_update['popup_parent_trackers'].to_s
+                                 .split(',').map(&:strip).reject(&:empty?).map(&:downcase)
+      popup_parent_names_set = ['change request', 'user story'] if popup_parent_names_set.empty?
+
+      # JS map: tracker_id => { hasChildren, isTerminal }
       tracker_has_children_js = trackers.map { |t|
-        "\"#{t.id}\":#{trackers_with_children.include?(t.id.to_s)}"
+        is_terminal = !popup_parent_names_set.include?(t.name.downcase)
+        "\"#{t.id}\":{c:#{trackers_with_children.include?(t.id.to_s)},term:#{is_terminal}}"
+      }.join(',')
+      # JS map: tracker_id => tracker_name (for display)
+      tracker_names_js = trackers.map { |t|
+        "\"#{t.id}\":#{t.name.to_json}"
       }.join(',')
 
       # ── Modal HTML (always rendered, hidden by default) ────────────────────
@@ -228,7 +239,11 @@ module RedmineParentToChildUpdate
       # ── JavaScript ────────────────────────────────────────────────────────
       output << "<script type='text/javascript'>"
 
-      output << "var pcuTrackerHasChildren={#{tracker_has_children_js}};"
+      output << "var pcuTrackerInfo={#{tracker_has_children_js}};"
+      output << "var pcuTrackerNames={#{tracker_names_js}};"
+      # Legacy alias — keeps any other code that references this working
+      output << "var pcuTrackerHasChildren={};"
+      output << "Object.keys(pcuTrackerInfo).forEach(function(k){pcuTrackerHasChildren[k]=pcuTrackerInfo[k].c;});"
 
       output << "function pcuCsrfToken(){"
       output << "  var m=document.querySelector('meta[name=csrf-token]');"
@@ -265,13 +280,15 @@ module RedmineParentToChildUpdate
       output << "function pcuOnTrackerChange(parentId){"
       output << "  pcuLoadRequiredFields(parentId);"
       output << "  var tid=document.getElementById('pcu-tracker-select').value;"
+      output << "  var info=pcuTrackerInfo[tid]||{c:false,term:true};"
+      # Terminal tracker (e.g. Task) = no chain, so never show "Save & Create Child Tracker"
+      output << "  var showChain=info.c&&!info.term;"
       output << "  var sc=document.getElementById('pcu-btn-save-child');"
       output << "  var saveBtn=document.getElementById('pcu-btn-save');"
       output << "  var closeBtn=document.getElementById('pcu-btn-close');"
-      output << "  var hasChildren=pcuTrackerHasChildren[tid];"
-      output << "  if(sc) sc.style.display=(hasChildren?'':'none');"
-      output << "  if(saveBtn) saveBtn.textContent=(hasChildren?'Save Tracker':'Save');"
-      output << "  if(closeBtn) closeBtn.textContent=(hasChildren?'Close':'Cancel');"
+      output << "  if(sc) sc.style.display=(showChain?'':'none');"
+      output << "  if(saveBtn) saveBtn.textContent=(showChain?'Save Tracker':'Save');"
+      output << "  if(closeBtn) closeBtn.textContent=(showChain?'Close':'Cancel');"
       output << "}"
 
       # Load admin-configured popup fields for selected tracker
