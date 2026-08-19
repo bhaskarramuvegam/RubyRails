@@ -369,24 +369,24 @@
               <% sel_std.each do |sf| %>
                 <span class="pcu-chip" id="pcu-chip-<%= tid %>-std_<%= sf[:key] %>"
                       draggable="true" data-fid="std_<%= sf[:key] %>" data-tid="<%= tid %>">
-                  <span class="pcu-drag-handle" title="Drag to reorder">⠿</span>
+                  <span class="pcu-drag-handle" title="Drag to reorder" draggable="false">&#8942;</span>
                   <%= sf[:name] %>
-                  <span style="font-size:10px;background:#1976D2;color:#fff;border-radius:3px;padding:1px 4px;margin-left:4px;">standard</span>
-                  <button type="button" class="pcu-chip-remove" title="Remove"
+                  <span style="font-size:10px;background:#1976D2;color:#fff;border-radius:3px;padding:1px 4px;margin-left:4px;" draggable="false">standard</span>
+                  <button type="button" class="pcu-chip-remove" title="Remove" draggable="false"
                           onclick="pcuRemove(<%= tid.inspect %>, 'std_<%= sf[:key] %>')">×</button>
                 </span>
               <% end %>
               <% sel_cfs.each do |cf| %>
                 <span class="pcu-chip" id="pcu-chip-<%= tid %>-cf_<%= cf.id %>"
                       draggable="true" data-fid="cf_<%= cf.id %>" data-tid="<%= tid %>">
-                  <span class="pcu-drag-handle" title="Drag to reorder">⠿</span>
+                  <span class="pcu-drag-handle" title="Drag to reorder" draggable="false">&#8942;</span>
                   <%= cf.name %>
                   <% if cf.is_required %>
-                    <span class="pcu-chip-req">required</span>
+                    <span class="pcu-chip-req" draggable="false">required</span>
                   <% else %>
-                    <span class="pcu-chip-opt">optional</span>
+                    <span class="pcu-chip-opt" draggable="false">optional</span>
                   <% end %>
-                  <button type="button" class="pcu-chip-remove" title="Remove"
+                  <button type="button" class="pcu-chip-remove" title="Remove" draggable="false"
                           onclick="pcuRemove(<%= tid.inspect %>, 'cf_<%= cf.id %>')">×</button>
                 </span>
               <% end %>
@@ -430,7 +430,6 @@
 
           </div><%# /pcu-tracker-bd %>
         </div><%# /pcu-tracker %>
-        <script>if(typeof pcuSetupDrag==='function') pcuSetupDrag(<%= tid %>);</script>
       <% end %>
     <% end %>
 
@@ -488,10 +487,11 @@ function pcuAdd(tid) {
   chip.dataset.fid = fid;
   chip.dataset.tid = String(tid);
   var tidJ = JSON.stringify(tid), fidJ = JSON.stringify(fid);
+  /* children must not be draggable themselves — they'd steal the dragstart */
   chip.innerHTML =
-    '<span class="pcu-drag-handle" title="Drag to reorder">&#10783;</span>' +
+    '<span class="pcu-drag-handle" title="Drag to reorder" draggable="false">&#8942;</span>' +
     ' ' + pcuEsc(fName) + ' ' + badgeHtml +
-    ' <button type="button" class="pcu-chip-remove" title="Remove"' +
+    ' <button type="button" class="pcu-chip-remove" title="Remove" draggable="false"' +
     '         onclick="pcuRemove(' + tidJ + ',' + fidJ + ')">&#215;</button>';
   document.getElementById('pcu-chips-' + tid).appendChild(chip);
 
@@ -628,72 +628,79 @@ function pcuSyncCheckboxOrder(tid) {
 }
 
 /* ── Drag-and-drop reordering ───────────────────────────────────────────── */
-var _pcuDrag = {};
+var _pcuDrag = { box: null, chip: null };
 
 function pcuSetupDrag(tid) {
   var box = document.getElementById('pcu-chips-' + tid);
-  if (!box || box._pcuDrag) return;
-  box._pcuDrag = true;
+  if (!box || box._pcuDragReady) return;
+  box._pcuDragReady = true;
 
-  /* helper: walk up from event target to find the nearest .pcu-chip */
-  function nearestChip(el) {
+  /* Walk up the DOM from el until we hit a direct .pcu-chip child of box */
+  function chipOf(el) {
     while (el && el !== box) {
-      if (el.classList && el.classList.contains('pcu-chip')) return el;
+      if (el.parentNode === box && el.classList && el.classList.contains('pcu-chip')) return el;
       el = el.parentNode;
     }
     return null;
   }
 
+  function clearOver() {
+    var chips = box.querySelectorAll('.pcu-chip.pcu-drag-over');
+    for (var i = 0; i < chips.length; i++) chips[i].classList.remove('pcu-drag-over');
+  }
+
   box.addEventListener('dragstart', function(e) {
-    var chip = nearestChip(e.target);
-    if (!chip) return;
-    _pcuDrag = { tid: tid, chip: chip };
-    chip.classList.add('pcu-dragging');
+    /* e.target is the element that has draggable=true, i.e. the chip span itself */
+    var chip = chipOf(e.target) || (e.target.classList && e.target.classList.contains('pcu-chip') ? e.target : null);
+    if (!chip) { e.preventDefault(); return; }
+    _pcuDrag.box  = box;
+    _pcuDrag.chip = chip;
     e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', chip.id); /* required for Firefox */
+    e.dataTransfer.setData('text/plain', chip.id);
+    /* Delay so the drag image renders before we fade the chip */
+    setTimeout(function() { chip.classList.add('pcu-dragging'); }, 0);
   });
 
   box.addEventListener('dragover', function(e) {
+    if (_pcuDrag.box !== box) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
-    var target = nearestChip(e.target);
-    box.querySelectorAll('.pcu-chip').forEach(function(c) { c.classList.remove('pcu-drag-over'); });
+    var target = chipOf(e.target);
+    clearOver();
     if (target && target !== _pcuDrag.chip) target.classList.add('pcu-drag-over');
   });
 
   box.addEventListener('dragleave', function(e) {
-    /* only clear when leaving the container entirely */
-    if (!box.contains(e.relatedTarget)) {
-      box.querySelectorAll('.pcu-chip').forEach(function(c) { c.classList.remove('pcu-drag-over'); });
-    }
+    if (!box.contains(e.relatedTarget)) clearOver();
   });
 
   box.addEventListener('drop', function(e) {
     e.preventDefault();
-    box.querySelectorAll('.pcu-chip').forEach(function(c) {
-      c.classList.remove('pcu-drag-over');
-    });
-    var target = nearestChip(e.target);
-    if (!target || target === _pcuDrag.chip || _pcuDrag.tid !== tid) return;
-    /* insert before or after target based on cursor position */
+    clearOver();
+    if (_pcuDrag.box !== box || !_pcuDrag.chip) return;
+    var target = chipOf(e.target);
+    if (!target || target === _pcuDrag.chip) return;
     var rect  = target.getBoundingClientRect();
     var after = (e.clientY - rect.top) > rect.height / 2;
-    if (after) {
-      box.insertBefore(_pcuDrag.chip, target.nextSibling);
-    } else {
-      box.insertBefore(_pcuDrag.chip, target);
-    }
+    box.insertBefore(_pcuDrag.chip, after ? target.nextSibling : target);
     pcuSyncCheckboxOrder(tid);
-    pcuUpdateCount(tid);
   });
 
   box.addEventListener('dragend', function() {
-    box.querySelectorAll('.pcu-chip').forEach(function(c) {
-      c.classList.remove('pcu-dragging', 'pcu-drag-over');
-    });
-    _pcuDrag = {};
+    if (_pcuDrag.chip) _pcuDrag.chip.classList.remove('pcu-dragging');
+    clearOver();
+    _pcuDrag = { box: null, chip: null };
   });
 }
+
+/* Initialise drag on every chip container once the page has fully rendered */
+document.addEventListener('DOMContentLoaded', function() {
+  var containers = document.querySelectorAll('[id^="pcu-chips-"]');
+  for (var i = 0; i < containers.length; i++) {
+    var tid = parseInt(containers[i].id.replace('pcu-chips-', ''), 10);
+    if (!isNaN(tid)) pcuSetupDrag(tid);
+  }
+});
 
 /* ── HTML-escape helper ─────────────────────────────────────────────────── */
 function pcuEsc(str) {
