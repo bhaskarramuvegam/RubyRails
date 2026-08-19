@@ -64,10 +64,13 @@ module RedmineParentToChildUpdate
         end
 
         # ── Applicable custom fields: tracker CFs enabled for this project ───
+        # Scope to IssueCustomField only — ProjectCustomField and VersionCustomField
+        # (shown under "Projects" / "Milestones" tabs in admin) must never appear in
+        # the issue popup even if they share the same join table rows.
         # Redmine's is_for_all=true → all projects; false → only listed projects.
-        # This mirrors exactly what fields appear on the Redmine issue form for this project.
         project_id = @issue.project.id
-        applicable_cfs = tracker.custom_fields.order(:position).select { |cf|
+        applicable_cfs = tracker.custom_fields.where(type: 'IssueCustomField')
+                                .order(:position).select { |cf|
           cf.is_for_all? || cf.project_ids.include?(project_id)
         }
         applicable_cf_map = applicable_cfs.index_by(&:id)  # id => cf
