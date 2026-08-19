@@ -75,12 +75,15 @@ module RedmineParentToChildUpdate
         }
         applicable_cf_map = applicable_cfs.index_by(&:id)  # id => cf
 
-        # ── Determine display order (plugin config = order only, NOT gate) ───
+        # ── Determine display order ───────────────────────────────────────────
         # Stored ids use "std_<key>" for standard fields and plain "<cf_id>" for custom fields.
         configured_ids = Array(popup_fields_cfg[tracker_id.to_s]).map(&:to_s).uniq
 
         if configured_ids.any?
-          # Filter configured order to only include fields actually applicable to this project
+          # Admin has explicitly saved a field config for this tracker.
+          # Show ONLY those fields (filtered to ones applicable to this project).
+          # No auto-append — fields not in the saved config are intentionally excluded.
+          # New std fields are still auto-added; new CFs are NOT (admin must add them explicitly).
           ordered_ids = configured_ids.select { |fid|
             if fid.start_with?('std_')
               applicable_std_keys.include?(fid.sub('std_', ''))
@@ -89,17 +92,14 @@ module RedmineParentToChildUpdate
               applicable_cf_map.key?(cf_id)
             end
           }
-          # Append any applicable fields added AFTER the config was last saved (new CFs, etc.)
+          # Auto-append standard fields that are newly applicable (tracker core_fields change)
+          # but do NOT auto-append custom fields — admin controls those explicitly.
           in_order = ordered_ids.to_set
           applicable_std_keys.each do |k|
             fid = "std_#{k}"; ordered_ids << fid unless in_order.include?(fid)
           end
-          applicable_cfs.each do |cf|
-            fid = cf.id.to_s
-            ordered_ids << fid unless in_order.include?(fid) || in_order.include?("cf_#{cf.id}")
-          end
         else
-          # No config saved: std fields in STANDARD_POPUP_FIELDS order, then CFs by position
+          # No config saved yet: show all applicable std fields + all applicable CFs
           ordered_ids = applicable_std_keys.map { |k| "std_#{k}" } +
                         applicable_cfs.map { |cf| cf.id.to_s }
         end
