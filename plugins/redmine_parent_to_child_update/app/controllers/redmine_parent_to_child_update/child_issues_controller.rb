@@ -48,11 +48,11 @@ module RedmineParentToChildUpdate
         workflow_rules = begin
           role_ids   = User.current.roles_for_project(@issue.project)
                            .reject(&:anonymous?).map(&:id)
-          def_status = IssueStatus.find_by(is_default: true) || IssueStatus.first
+          # Redmine uses old_status_id=0 for new-issue field permissions (no previous status).
           perms = WorkflowPermission.where(
             tracker_id:    tracker_id,
             role_id:       role_ids,
-            old_status_id: def_status&.id
+            old_status_id: 0
           )
           rule_priority = { 'hidden' => 3, 'readonly' => 2, 'required' => 1 }
           rules = {}
