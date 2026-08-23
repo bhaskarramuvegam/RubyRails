@@ -146,9 +146,7 @@ module RedmineParentToChildUpdate
       # Tracker names that trigger the primary child-creation popup.
       # Reads from plugin settings; falls back to the hard-coded default list.
       def popup_parent_tracker_names
-        raw = Setting.plugin_redmine_parent_to_child_update['popup_parent_trackers'].to_s
-        names = raw.split(',').map(&:strip).reject(&:blank?)
-        names.empty? ? ['Change Request', 'CR'] : names
+        ['Change Request', 'User Story']
       end
 
       # Check if this issue should trigger the primary child creation popup

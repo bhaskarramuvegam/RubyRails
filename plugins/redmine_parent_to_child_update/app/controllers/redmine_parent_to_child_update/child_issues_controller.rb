@@ -11,15 +11,16 @@ module RedmineParentToChildUpdate
     # Add new entries here as Redmine gains new fields — they auto-appear in admin config.
     STANDARD_POPUP_FIELDS = {
       'status_id'        => { name: ->{ l(:field_status)          }, format: 'select' },
-      'description'      => { name: ->{ l(:field_description)     }, format: 'text'   },
       'priority_id'      => { name: ->{ l(:field_priority)        }, format: 'select' },
       'assigned_to_id'   => { name: ->{ l(:field_assigned_to)     }, format: 'select' },
+      'author_id'        => { name: ->{ l(:field_author)          }, format: 'select' },
       'category_id'      => { name: ->{ l(:field_category)        }, format: 'select' },
       'fixed_version_id' => { name: ->{ l(:field_fixed_version)   }, format: 'select' },
       'start_date'       => { name: ->{ l(:field_start_date)      }, format: 'date'   },
       'due_date'         => { name: ->{ l(:field_due_date)        }, format: 'date'   },
       'estimated_hours'  => { name: ->{ l(:field_estimated_hours) }, format: 'float'  },
       'done_ratio'       => { name: ->{ l(:field_done_ratio)      }, format: 'int'    },
+      'description'      => { name: ->{ l(:field_description)     }, format: 'text'   },
     }.freeze
 
     # Return fields (standard + custom) to display in the child-creation popup.
@@ -36,98 +37,187 @@ module RedmineParentToChildUpdate
       begin
         plugin_settings  = Setting.plugin_redmine_parent_to_child_update || {}
         popup_fields_cfg = plugin_settings['tracker_popup_fields'] || {}
-        configured_ids   = Array(popup_fields_cfg[tracker_id.to_s]).map(&:to_s).uniq
 
-        if configured_ids.empty?
-          # Never configured → default to ALL fields for this tracker
-          tracker_core = tracker.respond_to?(:core_fields) ? Array(tracker.core_fields).map(&:to_s) : []
-          always_std   = %w[status_id description priority_id]
-          std_keys     = STANDARD_POPUP_FIELDS.keys.select { |k| always_std.include?(k) || tracker_core.include?(k) }
-          cf_ids       = tracker.custom_fields.map(&:id)
-        else
-          std_keys = configured_ids.select { |v| v.start_with?('std_') }.map { |v| v.sub('std_', '') }
-          cf_ids   = configured_ids.map { |v| v.sub(/\Acf_/, '').to_i }.select { |v| v > 0 }.uniq
-        end
+        # Excluded field names (admin config, matched by name case-insensitively)
+        excluded_names = (plugin_settings['popup_excluded_fields'] || 'Release Details')
+                           .split(',').map(&:strip).reject(&:empty?).map(&:downcase)
 
-        # ── Standard fields ──────────────────────────────────────────────────
-        std_fields = std_keys.filter_map do |key|
-          defn = STANDARD_POPUP_FIELDS[key]
-          next unless defn
-
-          opts = {
-            id:              "std_#{key}",
-            std_key:         key,
-            name:            defn[:name].respond_to?(:call) ? defn[:name].call : defn[:name],
-            field_format:    defn[:format],
-            possible_values: [],
-            default_value:   '',
-            value:           '',
-            is_required:     false,
-            is_standard:     true
-          }
-
-          case key
-          when 'status_id'
-            statuses = begin
-              IssueStatus.respond_to?(:sorted) ? IssueStatus.sorted : IssueStatus.order(:position)
-            rescue
-              IssueStatus.all
-            end
-            opts[:possible_values] = statuses.map { |s| { value: s.id.to_s, label: s.name } }
-            default_status = begin
-              IssueStatus.find_by(is_default: true)
-            rescue
-              nil
-            end || IssueStatus.first
-            opts[:value] = default_status&.id.to_s || ''
-          when 'estimated_hours'
-            opts[:value] = @issue.estimated_hours.to_s
-          when 'start_date'
-            opts[:value] = @issue.start_date&.to_s || ''
-          when 'due_date'
-            opts[:value] = @issue.due_date&.to_s || ''
-          when 'done_ratio'
-            opts[:value] = @issue.done_ratio.to_s
-          when 'description'
-            opts[:value] = @issue.description.to_s
-          when 'assigned_to_id'
-            opts[:possible_values] = @issue.project.members.includes(:user)
-              .map { |m| { value: m.user_id.to_s, label: m.user.name } }
-            opts[:value] = @issue.assigned_to_id.to_s
-          when 'priority_id'
-            opts[:possible_values] = IssuePriority.active
-              .map { |p| { value: p.id.to_s, label: p.name } }
-            opts[:value] = @issue.priority_id.to_s
-          when 'category_id'
-            opts[:possible_values] = @issue.project.issue_categories
-              .map { |c| { value: c.id.to_s, label: c.name } }
-            opts[:value] = @issue.category_id.to_s
-          when 'fixed_version_id'
-            opts[:possible_values] = @issue.project.shared_versions.open
-              .map { |v| { value: v.id.to_s, label: v.name } }
-            opts[:value] = @issue.fixed_version_id.to_s
+        # ── Workflow field permissions for current user + child tracker ──────────
+        # The Fields permissions page applies the same rule across all status columns.
+        # We query ALL WorkflowPermission rows for (child tracker + user's roles) without
+        # filtering by status, then take the most restrictive rule seen across any status.
+        # Rule precedence: hidden(3) > readonly(2) > required(1).
+        workflow_rules = begin
+          role_ids = User.current.roles_for_project(@issue.project)
+                         .select { |r| r.builtin == 0 }.map(&:id)
+          rule_priority = { 'hidden' => 3, 'readonly' => 2, 'required' => 1 }
+          rules = {}
+          if role_ids.any?
+            # Query ALL WorkflowPermission rows for this tracker+role (no status filter).
+            # Admins often set the same rule across every status column, and we need to
+            # catch rules that live only in transition rows (old_status_id > 0).
+            # Take the most restrictive rule found across any status.
+            WorkflowPermission
+              .where(tracker_id: tracker_id, role_id: role_ids)
+              .pluck(:field_name, :rule)
+              .each do |field_name, rule|
+                existing = rules[field_name]
+                if existing.nil? || rule_priority[rule].to_i > rule_priority[existing].to_i
+                  rules[field_name] = rule
+                end
+              end
+            # assigned_to_id: never force "required" in the child-creation popup.
+            # Redmine itself does not enforce assignee on new-issue creation even when
+            # a transition row has it marked required, so we match that behaviour.
+            rules.delete('assigned_to_id') if rules['assigned_to_id'] == 'required'
           end
-
-          opts
+          Rails.logger.warn("[PCU] workflow: tracker=#{tracker_id} roles=#{role_ids} rules=#{rules}")
+          rules
+        rescue => e
+          Rails.logger.warn("[PCU] workflow error: #{e.message}")
+          {}
         end
 
-        # ── Custom fields ────────────────────────────────────────────────────
-        all_tracker_cfs = tracker.custom_fields.to_a
-        configured_cfs  = all_tracker_cfs.select { |cf| cf_ids.include?(cf.id) }
-        cf_fields = configured_cfs.map do |cf|
-          {
-            id:              cf.id,
-            name:            cf.name,
-            field_format:    cf.field_format,
-            possible_values: cf.field_format == 'list' ? cf.possible_values : [],
-            default_value:   cf.default_value.to_s,
-            value:           @issue.custom_field_value(cf.id).to_s,
-            is_required:     cf.is_required,
-            is_standard:     false
+        # ── Applicable standard fields for this tracker ──────────────────────
+        # Only status, priority, assignee, author, description are universally present.
+        # All other standard fields (category, version, dates, etc.) must be in
+        # tracker.core_fields — exactly the same gate Redmine uses on the issue form.
+        tracker_core = tracker.respond_to?(:core_fields) ? Array(tracker.core_fields).map(&:to_s) : []
+        always_std   = %w[status_id priority_id assigned_to_id author_id description]
+        applicable_std_keys = STANDARD_POPUP_FIELDS.keys.select { |k|
+          always_std.include?(k) || tracker_core.include?(k)
+        }
+
+        # Additionally hide category/version when the project has none configured —
+        # prevents an empty dropdown that can never be filled.
+        if applicable_std_keys.include?('category_id') &&
+           @issue.project.issue_categories.empty?
+          applicable_std_keys -= ['category_id']
+        end
+        if applicable_std_keys.include?('fixed_version_id') &&
+           !@issue.project.shared_versions.open.exists?
+          applicable_std_keys -= ['fixed_version_id']
+        end
+
+        # ── Applicable custom fields: tracker CFs enabled for this project ───
+        # Scope to IssueCustomField only — ProjectCustomField and VersionCustomField
+        # (shown under "Projects" / "Milestones" tabs in admin) must never appear in
+        # the issue popup even if they share the same join table rows.
+        # Redmine's is_for_all=true → all projects; false → only listed projects.
+        project_id = @issue.project.id
+        applicable_cfs = tracker.custom_fields.where(type: 'IssueCustomField')
+                                .order(:position).select { |cf|
+          cf.is_for_all? || cf.project_ids.include?(project_id)
+        }
+        applicable_cf_map = applicable_cfs.index_by(&:id)  # id => cf
+
+        # ── Determine display order ───────────────────────────────────────────
+        # Stored ids use "std_<key>" for standard fields and plain "<cf_id>" for custom fields.
+        configured_ids = Array(popup_fields_cfg[tracker_id.to_s]).map(&:to_s).uniq
+
+        if configured_ids.any?
+          # Admin has explicitly saved a field config for this tracker.
+          # Show ONLY those fields (filtered to ones applicable to this project).
+          # No auto-append — fields not in the saved config are intentionally excluded.
+          # New std fields are still auto-added; new CFs are NOT (admin must add them explicitly).
+          ordered_ids = configured_ids.select { |fid|
+            if fid.start_with?('std_')
+              applicable_std_keys.include?(fid.sub('std_', ''))
+            else
+              cf_id = fid.sub(/\Acf_/, '').to_i
+              applicable_cf_map.key?(cf_id)
+            end
           }
+          # Auto-append standard fields that are newly applicable (tracker core_fields change)
+          # but do NOT auto-append custom fields — admin controls those explicitly.
+          in_order = ordered_ids.to_set
+          applicable_std_keys.each do |k|
+            fid = "std_#{k}"; ordered_ids << fid unless in_order.include?(fid)
+          end
+        else
+          # No config saved yet: show all applicable std fields + all applicable CFs
+          ordered_ids = applicable_std_keys.map { |k| "std_#{k}" } +
+                        applicable_cfs.map { |cf| cf.id.to_s }
         end
 
-        render json: { fields: std_fields + cf_fields }
+        # ── Build field objects in order ─────────────────────────────────────
+        all_fields = ordered_ids.filter_map do |fid|
+          if fid.start_with?('std_')
+            key  = fid.sub('std_', '')
+            defn = STANDARD_POPUP_FIELDS[key]
+            next unless defn
+            field_name = defn[:name].respond_to?(:call) ? defn[:name].call : defn[:name]
+            next if excluded_names.include?(field_name.to_s.downcase)
+            wf_rule = workflow_rules[key].to_s
+            next if wf_rule == 'hidden'
+            opts = { id: "std_#{key}", std_key: key, name: field_name,
+                     field_format: defn[:format], possible_values: [],
+                     default_value: '', value: '', is_standard: true,
+                     is_required: (wf_rule == 'required'),
+                     is_readonly: (wf_rule == 'readonly') }
+            case key
+            when 'status_id'
+              statuses = begin IssueStatus.respond_to?(:sorted) ? IssueStatus.sorted : IssueStatus.order(:position)
+                         rescue; IssueStatus.all; end
+              opts[:possible_values] = statuses.map { |s| { value: s.id.to_s, label: s.name } }
+              default_status = (IssueStatus.find_by(is_default: true) rescue nil) || IssueStatus.first
+              opts[:value] = default_status&.id.to_s || ''
+            when 'estimated_hours' then opts[:value] = @issue.estimated_hours.to_s
+            when 'start_date'      then opts[:value] = @issue.start_date&.to_s || ''
+            when 'due_date'        then opts[:value] = @issue.due_date&.to_s || ''
+            when 'done_ratio'      then opts[:value] = @issue.done_ratio.to_s
+            when 'description'     then opts[:value] = @issue.description.to_s
+            when 'assigned_to_id'
+              opts[:possible_values] = @issue.project.members.includes(:user)
+                .map { |m| { value: m.user_id.to_s, label: m.user.name } }
+              opts[:value] = @issue.assigned_to_id.to_s
+            when 'author_id'
+              opts[:possible_values] = @issue.project.members.includes(:user)
+                .map { |m| { value: m.user_id.to_s, label: m.user.name } }
+              opts[:value] = User.current.id.to_s
+            when 'priority_id'
+              opts[:possible_values] = IssuePriority.active.map { |p| { value: p.id.to_s, label: p.name } }
+              opts[:value] = @issue.priority_id.to_s
+            when 'category_id'
+              opts[:possible_values] = @issue.project.issue_categories.map { |c| { value: c.id.to_s, label: c.name } }
+              opts[:value] = @issue.category_id.to_s
+            when 'fixed_version_id'
+              opts[:possible_values] = @issue.project.shared_versions.open.map { |v| { value: v.id.to_s, label: v.name } }
+              opts[:value] = @issue.fixed_version_id.to_s
+            end
+            opts
+          else
+            cf_id = fid.sub(/\Acf_/, '').to_i
+            next unless cf_id > 0
+            cf = applicable_cf_map[cf_id]   # nil if not applicable to this project
+            next unless cf
+            next if excluded_names.include?(cf.name.to_s.downcase)
+            cf_wf_rule = workflow_rules[cf.id.to_s].to_s
+            next if cf_wf_rule == 'hidden'
+            pv = case cf.field_format
+                 when 'list'
+                   Array(cf.possible_values).map(&:to_s).reject(&:empty?)
+                 when 'enumeration'
+                   # CustomFieldEnumeration-backed list
+                   cf.respond_to?(:enumerations) ?
+                     cf.enumerations.active.map { |e| e.name.to_s } :
+                     Array(cf.possible_values).map(&:to_s).reject(&:empty?)
+                 else
+                   []
+                 end
+            raw_val = @issue.custom_field_value(cf.id)
+            val_str = raw_val.is_a?(Array) ? Array(raw_val).reject(&:empty?).first.to_s : raw_val.to_s
+            { id: cf.id, name: cf.name, field_format: pv.any? ? 'list' : cf.field_format,
+              possible_values: pv,
+              default_value: cf.default_value.to_s,
+              value: val_str,
+              is_required: (cf_wf_rule == 'required' || (cf_wf_rule.empty? && cf.is_required)),
+              is_readonly: (cf_wf_rule == 'readonly'),
+              is_standard: false }
+          end
+        end
+
+        render json: { fields: all_fields }
       rescue => e
         Rails.logger.error("PCU get_required_fields error: #{e.class}: #{e.message}\n#{e.backtrace.first(5).join("\n")}")
         render json: { error: "Failed to load fields: #{e.message}", fields: [] }, status: :internal_server_error
@@ -189,6 +279,7 @@ module RedmineParentToChildUpdate
             when 'done_ratio'       then primary_child.done_ratio       = value.to_i.clamp(0, 100)
             when 'description'      then primary_child.description      = value
             when 'assigned_to_id'   then primary_child.assigned_to_id   = value.to_i
+            when 'author_id'        then primary_child.author_id        = value.to_i
             when 'priority_id'      then primary_child.priority_id      = value.to_i
             when 'category_id'      then primary_child.category_id      = value.to_i
             when 'fixed_version_id' then primary_child.fixed_version_id = value.to_i
@@ -206,9 +297,25 @@ module RedmineParentToChildUpdate
           end
         end
         if primary_child.save
-          # Attach uploaded files using Redmine's built-in attachment mechanism
-          if params[:attachments].present? && primary_child.respond_to?(:save_attachments)
-            primary_child.save_attachments(params[:attachments])
+          # save_attachments expects a Hash but params[:attachments] is ActionController::Parameters
+          # in Rails 5+, which fails the is_a?(Hash) check inside save_attachments silently.
+          # Use Attachment.create! directly instead.
+          if params[:attachments].present?
+            params[:attachments].each do |_idx, att_params|
+              file = att_params[:file]
+              next unless file.respond_to?(:read)
+              begin
+                Attachment.create!(
+                  container:   primary_child,
+                  file:        file,
+                  filename:    att_params[:filename].presence || file.original_filename,
+                  description: att_params[:description].to_s,
+                  author:      User.current
+                )
+              rescue => e
+                Rails.logger.error("PCU attachment error: #{e.message}")
+              end
+            end
           end
           created_children << primary_child
         else
@@ -240,19 +347,17 @@ module RedmineParentToChildUpdate
         end
 
         # ── Chain popup logic ──────────────────────────────────────────────────
-        # skip_chain=1 → "Save Tracker" button: always reload, no chain
-        # skip_chain=0 → "Save & Create Child Tracker" button: chain if configured
-        skip_chain = params[:skip_chain].to_s == '1'
+        # Chain: Change Request → User Story → Task (hardcoded, ends at Task)
+        # skip_chain=1 → "Save Tracker" button: no chain
+        # skip_chain=0 → "Save & Create Child Tracker": navigate to child show page
+        #   so the auto-popup fires there for the next level
+        skip_chain         = params[:skip_chain].to_s == '1'
+        chain_parents      = ['change request', 'user story']
+        # Chain continues if user clicked "Save & Create Child" AND the newly created
+        # child is itself a chain-parent tracker (i.e. User Story, not Task)
+        child_is_chain_parent = chain_parents.any? { |n| n.casecmp?(primary_child.tracker.name) }
 
-        trackers_map         = Setting.plugin_redmine_parent_to_child_update['popup_child_trackers_by_parent'] || {}
-        child_tracker_filter = trackers_map[primary_child.tracker_id.to_s].to_s.strip
-
-        raw_parent_trackers       = Setting.plugin_redmine_parent_to_child_update['popup_parent_trackers'].to_s
-        popup_parent_names        = raw_parent_trackers.split(',').map(&:strip).reject(&:empty?)
-        popup_parent_names        = ['Change Request', 'CR'] if popup_parent_names.empty?
-        current_parent_is_chain   = popup_parent_names.any? { |n| n.casecmp?(@issue.tracker.name) }
-
-        if !skip_chain && child_tracker_filter.present? && current_parent_is_chain
+        if !skip_chain && child_is_chain_parent
           session[:redmine_parent_to_child_show_prompt_for] = primary_child.id
           render json: {
             children:    created_children.map { |c| { id: c.id, subject: c.subject, url: issue_path(c) } },
