@@ -31,6 +31,8 @@ Redmine::Plugin.register :redmine_parent_to_child_update do
     # Hash: tracker_id (string) => array of field IDs controlling popup field order
     'tracker_popup_fields' => {},
     # Comma-separated field names to exclude from popup (matched case-insensitively by name)
-    'popup_excluded_fields' => 'Release Details'
+    'popup_excluded_fields' => 'Release Details',
+    # Popup header gradient: two hex colors separated by comma (start, end)
+    'popup_header_color' => '#eff6ff,#dbeafe'
   }, partial: 'settings/redmine_parent_to_child_update_settings'
 end

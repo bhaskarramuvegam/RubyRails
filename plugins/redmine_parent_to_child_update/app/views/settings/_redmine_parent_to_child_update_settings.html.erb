@@ -84,8 +84,60 @@
       </label>
     </div>
 
+    <div class="pcu-setting">
+      <label>Popup header gradient colors</label>
+      <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+        <%
+          raw_colors   = (@settings['popup_header_color'] || '#eff6ff,#dbeafe').split(',').map(&:strip)
+          hdr_color1   = raw_colors[0].presence || '#eff6ff'
+          hdr_color2   = raw_colors[1].presence || '#dbeafe'
+        %>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <label class="inline" style="font-weight:normal;font-size:12px;">Start&nbsp;color</label>
+          <input type="color" id="pcu-hdr-c1" value="<%= hdr_color1 %>"
+                 oninput="pcuUpdateHeaderPreview()"
+                 style="width:38px;height:28px;padding:1px;border:1px solid #ccc;border-radius:4px;cursor:pointer;">
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <label class="inline" style="font-weight:normal;font-size:12px;">End&nbsp;color</label>
+          <input type="color" id="pcu-hdr-c2" value="<%= hdr_color2 %>"
+                 oninput="pcuUpdateHeaderPreview()"
+                 style="width:38px;height:28px;padding:1px;border:1px solid #ccc;border-radius:4px;cursor:pointer;">
+        </div>
+        <div id="pcu-hdr-preview"
+             style="height:32px;width:220px;border-radius:6px;border:1px solid #ddd;
+                    background:linear-gradient(135deg,<%= hdr_color1 %>,<%= hdr_color2 %>);
+                    display:flex;align-items:center;padding:0 12px;font-size:13px;
+                    font-weight:700;color:#1e3a8a;">
+          Create Child Tracker
+        </div>
+        <button type="button" onclick="pcuResetHeaderColor()"
+                style="padding:4px 10px;font-size:12px;background:#9e9e9e;color:#fff;
+                       border:none;border-radius:3px;cursor:pointer;">Reset to default</button>
+      </div>
+      <%# Hidden field that carries the combined value on form submit %>
+      <%= hidden_field_tag 'settings[popup_header_color]',
+            "#{hdr_color1},#{hdr_color2}", id: 'pcu-hdr-value' %>
+      <p class="pcu-hint">Choose the gradient start and end color for the popup header bar.</p>
+    </div>
+
   </div>
 </div>
+
+<script>
+function pcuUpdateHeaderPreview() {
+  var c1 = document.getElementById('pcu-hdr-c1').value;
+  var c2 = document.getElementById('pcu-hdr-c2').value;
+  document.getElementById('pcu-hdr-preview').style.background =
+    'linear-gradient(135deg,' + c1 + ',' + c2 + ')';
+  document.getElementById('pcu-hdr-value').value = c1 + ',' + c2;
+}
+function pcuResetHeaderColor() {
+  document.getElementById('pcu-hdr-c1').value = '#eff6ff';
+  document.getElementById('pcu-hdr-c2').value = '#dbeafe';
+  pcuUpdateHeaderPreview();
+}
+</script>
 
 <%# ═══════════════════════════════════════════════════════════════════════════
     SECTION 2 – Field Replication

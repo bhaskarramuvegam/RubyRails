@@ -124,18 +124,21 @@ module RedmineParentToChildUpdate
       output << "  animation:pcuSlideUp 0.2s ease;}"
       output << "@keyframes pcuSlideUp{from{transform:translateY(16px);opacity:0.6}to{transform:translateY(0);opacity:1}}"
       # Header
+      raw_hdr = (Setting.plugin_redmine_parent_to_child_update['popup_header_color'] rescue nil).to_s
+      hdr_parts  = raw_hdr.split(',').map(&:strip).select { |c| c.match?(/\A#[0-9a-fA-F]{3,6}\z/) }
+      hdr_color1 = hdr_parts[0].presence || '#eff6ff'
+      hdr_color2 = hdr_parts[1].presence || '#dbeafe'
       output << ".pcu-modal-header{"
       output << "  display:flex;align-items:center;justify-content:space-between;"
-      output << "  padding:16px 24px;border-bottom:1px solid #f1f5f9;"
-      output << "  background:linear-gradient(135deg,#1e40af 0%,#3b82f6 100%);"
+      output << "  padding:14px 24px;border-bottom:2px solid #e2e8f0;"
+      output << "  background:linear-gradient(135deg,#{hdr_color1} 0%,#{hdr_color2} 100%);"
       output << "  border-radius:12px 12px 0 0;}"
-      output << ".pcu-modal-header h3{margin:0;color:#fff;font-size:15px;font-weight:600;"
-      output << "  letter-spacing:0.01em;display:flex;align-items:center;gap:8px;}"
-      output << ".pcu-modal-header h3::before{content:'\\f0ae';font-size:14px;opacity:0.85;}"
-      output << ".pcu-modal-close-x{background:rgba(255,255,255,0.15);border:none;font-size:16px;"
-      output << "  cursor:pointer;color:#fff;line-height:1;padding:4px 8px;border-radius:6px;"
-      output << "  transition:background 0.15s;} "
-      output << ".pcu-modal-close-x:hover{background:rgba(255,255,255,0.3);}"
+      output << ".pcu-modal-header h3{margin:0;color:#1e3a8a;font-size:15px;font-weight:700;"
+      output << "  letter-spacing:0.01em;}"
+      output << ".pcu-modal-close-x{background:rgba(30,58,138,0.08);border:1px solid #bfdbfe;"
+      output << "  font-size:15px;cursor:pointer;color:#1e40af;line-height:1;padding:4px 9px;"
+      output << "  border-radius:6px;font-weight:700;transition:all 0.15s;}"
+      output << ".pcu-modal-close-x:hover{background:#dbeafe;color:#1e3a8a;border-color:#93c5fd;}"
       # Body
       output << ".pcu-modal-body{padding:20px 24px 12px;}"
       # Description banner
@@ -214,9 +217,9 @@ module RedmineParentToChildUpdate
       output << ".pcu-files-row input[type=file]{font-size:12px;color:#475569;}"
       # Footer
       output << ".pcu-modal-footer{"
-      output << "  padding:14px 24px;border-top:1px solid #f1f5f9;"
+      output << "  padding:14px 24px;border-top:2px solid #e2e8f0;"
       output << "  display:flex;gap:8px;flex-wrap:wrap;align-items:center;"
-      output << "  background:#f8fafc;border-radius:0 0 12px 12px;}"
+      output << "  background:linear-gradient(135deg,#f8fafc 0%,#eff6ff 100%);border-radius:0 0 12px 12px;}"
       # Buttons — base
       output << ".pcu-btn{"
       output << "  padding:8px 18px;font-size:12.5px;border-radius:8px;cursor:pointer;border:none;"
