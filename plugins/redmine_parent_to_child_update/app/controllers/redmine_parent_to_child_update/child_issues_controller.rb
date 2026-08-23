@@ -53,17 +53,12 @@ module RedmineParentToChildUpdate
           rule_priority = { 'hidden' => 3, 'readonly' => 2, 'required' => 1 }
           rules = {}
           if role_ids.any?
-            # For new-issue creation the relevant workflow rows are:
-            #   old_status_id = 0  → "new issues" column in the permissions UI
-            #   old_status_id = default_status.id → some setups store rules here instead
-            # We do NOT scan all status transitions — that would pick up rules that only
-            # apply when an existing issue moves to a different status (e.g. assignee
-            # becoming required on the "In Progress" → "Resolved" transition).
-            default_status_id = (IssueStatus.find_by(is_default: true)&.id ||
-                                  IssueStatus.first&.id || 0)
+            # Query ALL WorkflowPermission rows for this tracker+role (no status filter).
+            # Admins often set the same rule across every status column, and we need to
+            # catch rules that live only in transition rows (old_status_id > 0).
+            # Take the most restrictive rule found across any status.
             WorkflowPermission
-              .where(tracker_id: tracker_id, role_id: role_ids,
-                     old_status_id: [0, default_status_id])
+              .where(tracker_id: tracker_id, role_id: role_ids)
               .pluck(:field_name, :rule)
               .each do |field_name, rule|
                 existing = rules[field_name]
@@ -71,6 +66,10 @@ module RedmineParentToChildUpdate
                   rules[field_name] = rule
                 end
               end
+            # assigned_to_id: never force "required" in the child-creation popup.
+            # Redmine itself does not enforce assignee on new-issue creation even when
+            # a transition row has it marked required, so we match that behaviour.
+            rules.delete('assigned_to_id') if rules['assigned_to_id'] == 'required'
           end
           Rails.logger.warn("[PCU] workflow: tracker=#{tracker_id} roles=#{role_ids} rules=#{rules}")
           rules
