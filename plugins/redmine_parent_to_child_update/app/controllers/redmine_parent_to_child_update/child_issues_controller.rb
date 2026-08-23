@@ -42,29 +42,31 @@ module RedmineParentToChildUpdate
         excluded_names = (plugin_settings['popup_excluded_fields'] || 'Release Details')
                            .split(',').map(&:strip).reject(&:empty?).map(&:downcase)
 
-        # ── Workflow field permissions for current user + tracker + new-issue status ──
-        # Query WorkflowPermission directly (avoids version-specific API differences).
-        # Rule precedence when multiple roles apply: hidden > readonly > required.
+        # ── Workflow field permissions for current user + child tracker ──────────
+        # The Fields permissions page applies the same rule across all status columns.
+        # We query ALL WorkflowPermission rows for (child tracker + user's roles) without
+        # filtering by status, then take the most restrictive rule seen across any status.
+        # Rule precedence: hidden(3) > readonly(2) > required(1).
         workflow_rules = begin
-          role_ids   = User.current.roles_for_project(@issue.project)
-                           .reject(&:anonymous?).map(&:id)
-          # Redmine uses old_status_id=0 for new-issue field permissions (no previous status).
-          perms = WorkflowPermission.where(
-            tracker_id:    tracker_id,
-            role_id:       role_ids,
-            old_status_id: 0
-          )
+          role_ids = User.current.roles_for_project(@issue.project)
+                         .select { |r| r.builtin == 0 }.map(&:id)
           rule_priority = { 'hidden' => 3, 'readonly' => 2, 'required' => 1 }
           rules = {}
-          perms.each do |wp|
-            existing = rules[wp.field_name]
-            if existing.nil? || rule_priority[wp.rule].to_i > rule_priority[existing].to_i
-              rules[wp.field_name] = wp.rule
-            end
+          if role_ids.any?
+            WorkflowPermission
+              .where(tracker_id: tracker_id, role_id: role_ids)
+              .pluck(:field_name, :rule)
+              .each do |field_name, rule|
+                existing = rules[field_name]
+                if existing.nil? || rule_priority[rule].to_i > rule_priority[existing].to_i
+                  rules[field_name] = rule
+                end
+              end
           end
+          Rails.logger.warn("[PCU] workflow: tracker=#{tracker_id} roles=#{role_ids} rules=#{rules}")
           rules
         rescue => e
-          Rails.logger.warn("PCU workflow rules error: #{e.message}")
+          Rails.logger.warn("[PCU] workflow error: #{e.message}")
           {}
         end
 
