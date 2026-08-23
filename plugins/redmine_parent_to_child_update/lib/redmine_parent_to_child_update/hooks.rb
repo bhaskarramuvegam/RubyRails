@@ -376,7 +376,8 @@ module RedmineParentToChildUpdate
       output << "        if(initVal) inp.value=initVal;"
       output << "      }"
       # Tag inputs with either std_key or cf_id so pcuCreateChild knows how to submit them
-      output << "      if(cf.is_standard){ inp.dataset.stdKey=cf.std_key; } else { inp.dataset.cfId=cf.id; }"
+      output << "      if(cf.is_standard){ inp.dataset.stdKey=cf.std_key; } else { inp.dataset.cfId=cf.id; }
+      inp.dataset.fieldName=cf.name;"
       output << "      inp.dataset.required=cf.is_required?'1':'0';"
       output << "      if(cf.is_readonly){"
       output << "        inp.disabled=true;"
@@ -414,8 +415,7 @@ module RedmineParentToChildUpdate
       output << "    if(cfInputs[i].disabled) continue;"
       output << "    if(cfInputs[i].dataset.required!=='1') continue;"
       output << "    if(!cfInputs[i].value||cfInputs[i].value.trim()===''){"
-      output << "      var lbl=cfInputs[i].closest('.child-req-field');"
-      output << "      var fn=lbl?lbl.querySelector('label').textContent.trim():'A required field';"
+      output << "      var fn=cfInputs[i].dataset.fieldName||'A required field';"
       output << "      alert(fn+' cannot be blank.'); cfInputs[i].focus(); return;"
       output << "    }"
       output << "  }"

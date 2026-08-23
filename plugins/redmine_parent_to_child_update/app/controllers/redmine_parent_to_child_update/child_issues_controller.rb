@@ -53,8 +53,17 @@ module RedmineParentToChildUpdate
           rule_priority = { 'hidden' => 3, 'readonly' => 2, 'required' => 1 }
           rules = {}
           if role_ids.any?
+            # For new-issue creation the relevant workflow rows are:
+            #   old_status_id = 0  → "new issues" column in the permissions UI
+            #   old_status_id = default_status.id → some setups store rules here instead
+            # We do NOT scan all status transitions — that would pick up rules that only
+            # apply when an existing issue moves to a different status (e.g. assignee
+            # becoming required on the "In Progress" → "Resolved" transition).
+            default_status_id = (IssueStatus.find_by(is_default: true)&.id ||
+                                  IssueStatus.first&.id || 0)
             WorkflowPermission
-              .where(tracker_id: tracker_id, role_id: role_ids)
+              .where(tracker_id: tracker_id, role_id: role_ids,
+                     old_status_id: [0, default_status_id])
               .pluck(:field_name, :rule)
               .each do |field_name, rule|
                 existing = rules[field_name]
