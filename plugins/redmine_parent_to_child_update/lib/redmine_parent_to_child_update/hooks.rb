@@ -514,7 +514,8 @@ module RedmineParentToChildUpdate
       output << "    document.getElementById('pcu-child-modal').style.display='block';"
       output << "    pcuOnTrackerChange(issueId);"
       output << "  });"
-      output << "  addLink.parentNode.insertBefore(btn,addLink);"
+      output << "  addLink.parentNode.insertBefore(btn,addLink);
+      addLink.style.display='none';"
       # Make the parent container always visible (Redmine hides it until hover)
       output << "  var container=addLink.parentNode;"
       output << "  while(container&&container!==document.body){"
