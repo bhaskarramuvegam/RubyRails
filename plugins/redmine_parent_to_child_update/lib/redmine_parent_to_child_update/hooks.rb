@@ -103,8 +103,26 @@ module RedmineParentToChildUpdate
 
       output = +""
 
+      # ── Read appearance settings ──────────────────────────────────────────────
+      _pcu_cfg = Setting.plugin_redmine_parent_to_child_update rescue {}
+
+      # Font size — clamp to 10–24 px
+      _raw_fs  = _pcu_cfg['popup_font_size'].to_f
+      _base_fs = _raw_fs.between?(10, 24) ? _raw_fs : 12.5
+
+      # Footer gradient
+      _raw_fc   = _pcu_cfg['popup_footer_color'].to_s
+      _fc_parts = _raw_fc.split(',').map(&:strip).select { |c| c.match?(/\A#[0-9a-fA-F]{3,6}\z/) }
+      _fc1 = _fc_parts[0].presence || '#f8fafc'
+      _fc2 = _fc_parts[1].presence || '#eff6ff'
+
       # ── Modal CSS ─────────────────────────────────────────────────────────────
       output << "<style type='text/css'>"
+      # CSS custom properties — all popup sizes derive from --pcu-fs
+      output << "#pcu-child-modal{--pcu-fs:#{_base_fs}px;"
+      output << "  --pcu-fs-sm:calc(var(--pcu-fs) * 0.85);"
+      output << "  --pcu-fs-lg:calc(var(--pcu-fs) * 1.1);"
+      output << "  --pcu-fs-h3:calc(var(--pcu-fs) * 1.15);}"
       # Google Inter font for modern look
       output << "@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');"
       # Backdrop
@@ -133,7 +151,7 @@ module RedmineParentToChildUpdate
       output << "  padding:14px 24px;border-bottom:2px solid #e2e8f0;"
       output << "  background:linear-gradient(135deg,#{hdr_color1} 0%,#{hdr_color2} 100%);"
       output << "  border-radius:12px 12px 0 0;}"
-      output << ".pcu-modal-header h3{margin:0;color:#1e3a8a;font-size:15px;font-weight:700;"
+      output << ".pcu-modal-header h3{margin:0;color:#1e3a8a;font-size:var(--pcu-fs-h3);font-weight:700;"
       output << "  letter-spacing:0.01em;}"
       output << ".pcu-modal-close-x{background:rgba(30,58,138,0.08);border:1px solid #bfdbfe;"
       output << "  font-size:15px;cursor:pointer;color:#1e40af;line-height:1;padding:4px 9px;"
@@ -143,7 +161,7 @@ module RedmineParentToChildUpdate
       output << ".pcu-modal-body{padding:20px 24px 12px;}"
       # Description banner
       output << "#pcu-child-modal .pcu-desc{"
-      output << "  color:#475569;font-size:12.5px;margin-bottom:14px;padding:10px 14px;"
+      output << "  color:#475569;font-size:var(--pcu-fs);margin-bottom:14px;padding:10px 14px;"
       output << "  background:#f8fafc;border-left:3px solid #3b82f6;border-radius:0 6px 6px 0;"
       output << "  line-height:1.5;}"
       output << "#pcu-child-modal .pcu-desc strong{color:#1e40af;}"
@@ -159,14 +177,14 @@ module RedmineParentToChildUpdate
       output << "  color:#94a3b8;margin:12px 0 6px;grid-column:1/-1;}"
       # Labels
       output << "#pcu-child-modal label,#pcu-child-modal .child-req-field label{"
-      output << "  font-weight:500;font-size:11.5px;display:block;margin-bottom:4px;"
+      output << "  font-weight:500;font-size:var(--pcu-fs-sm);display:block;margin-bottom:4px;"
       output << "  color:#374151;letter-spacing:0.01em;}"
       # All inputs / selects / textareas
       output << "#pcu-child-modal select,"
       output << "#pcu-child-modal input[type=text],"
       output << "#pcu-child-modal input[type=number],"
       output << "#pcu-child-modal input[type=date]{"
-      output << "  width:100%;padding:6px 10px;font-size:12.5px;box-sizing:border-box;"
+      output << "  width:100%;padding:6px 10px;font-size:var(--pcu-fs);box-sizing:border-box;"
       output << "  border:1.5px solid #e2e8f0;border-radius:7px;margin-top:0;height:32px;"
       output << "  background:#fff;color:#1e293b;transition:border-color 0.15s,box-shadow 0.15s;"
       output << "  font-family:inherit;}"
@@ -186,7 +204,7 @@ module RedmineParentToChildUpdate
       output << ".pcu-field-block,.child-req-field{margin-bottom:0;}"
       # Textarea
       output << ".child-req-field textarea{"
-      output << "  width:100%;padding:8px 10px;font-size:12.5px;box-sizing:border-box;"
+      output << "  width:100%;padding:8px 10px;font-size:var(--pcu-fs);box-sizing:border-box;"
       output << "  border:1.5px solid #e2e8f0;border-radius:7px;height:auto;min-height:80px;"
       output << "  resize:vertical;font-family:inherit;transition:border-color 0.15s,box-shadow 0.15s;}"
       output << ".child-req-field textarea:focus{"
@@ -210,19 +228,19 @@ module RedmineParentToChildUpdate
       output << "#pcu-child-modal input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}"
       # Status message
       output << "#pcu-status-msg{display:none;margin:10px 0 0;padding:10px 14px;border-radius:8px;"
-      output << "  font-size:12.5px;font-weight:500;border:1px solid transparent;}"
+      output << "  font-size:var(--pcu-fs);font-weight:500;border:1px solid transparent;}"
       # Files row
       output << ".pcu-files-row{margin-top:14px;padding:12px 0 0;border-top:1px solid #f1f5f9;}"
-      output << ".pcu-files-row label{color:#374151;font-size:11.5px;font-weight:500;margin-bottom:6px;display:block;}"
-      output << ".pcu-files-row input[type=file]{font-size:12px;color:#475569;}"
-      # Footer
+      output << ".pcu-files-row label{color:#374151;font-size:var(--pcu-fs-sm);font-weight:500;margin-bottom:6px;display:block;}"
+      output << ".pcu-files-row input[type=file]{font-size:var(--pcu-fs-sm);color:#475569;}"
+      # Footer — color from settings
       output << ".pcu-modal-footer{"
       output << "  padding:14px 24px;border-top:2px solid #e2e8f0;"
       output << "  display:flex;gap:8px;flex-wrap:wrap;align-items:center;"
-      output << "  background:linear-gradient(135deg,#f8fafc 0%,#eff6ff 100%);border-radius:0 0 12px 12px;}"
+      output << "  background:linear-gradient(135deg,#{_fc1} 0%,#{_fc2} 100%);border-radius:0 0 12px 12px;}"
       # Buttons — base
       output << ".pcu-btn{"
-      output << "  padding:8px 18px;font-size:12.5px;border-radius:8px;cursor:pointer;border:none;"
+      output << "  padding:8px 18px;font-size:var(--pcu-fs);border-radius:8px;cursor:pointer;border:none;"
       output << "  font-weight:600;font-family:inherit;letter-spacing:0.01em;"
       output << "  transition:all 0.15s;display:inline-flex;align-items:center;gap:6px;}"
       output << ".pcu-btn:active{transform:scale(0.97);}"

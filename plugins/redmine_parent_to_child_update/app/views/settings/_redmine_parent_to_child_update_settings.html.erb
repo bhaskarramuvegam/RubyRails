@@ -121,6 +121,64 @@
       <p class="pcu-hint">Choose the gradient start and end color for the popup header bar.</p>
     </div>
 
+    <div class="pcu-setting">
+      <label>Popup font size</label>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <input type="range" id="pcu-fs-range"
+               min="10" max="20" step="0.5"
+               value="<%= (@settings['popup_font_size'] || '12.5').to_f %>"
+               oninput="pcuUpdateFontSize()"
+               style="width:180px;cursor:pointer;">
+        <span id="pcu-fs-display"
+              style="min-width:42px;font-size:13px;font-weight:bold;color:#1e3a8a;">
+          <%= (@settings['popup_font_size'] || '12.5') %>px
+        </span>
+        <button type="button" onclick="pcuResetFontSize()"
+                style="padding:4px 10px;font-size:12px;background:#9e9e9e;color:#fff;
+                       border:none;border-radius:3px;cursor:pointer;">Reset</button>
+      </div>
+      <%= hidden_field_tag 'settings[popup_font_size]',
+            @settings['popup_font_size'] || '12.5', id: 'pcu-fs-value' %>
+      <p class="pcu-hint">Default 12.5 px. Drag right to increase — all popup text scales together.</p>
+    </div>
+
+    <div class="pcu-setting">
+      <label>Popup footer gradient colors</label>
+      <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+        <%
+          raw_fc   = (@settings['popup_footer_color'] || '#f8fafc,#eff6ff').split(',').map(&:strip)
+          ftr_c1   = raw_fc[0].presence || '#f8fafc'
+          ftr_c2   = raw_fc[1].presence || '#eff6ff'
+        %>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <label class="inline" style="font-weight:normal;font-size:12px;">Start&nbsp;color</label>
+          <input type="color" id="pcu-ftr-c1" value="<%= ftr_c1 %>"
+                 oninput="pcuUpdateFooterPreview()"
+                 style="width:38px;height:28px;padding:1px;border:1px solid #ccc;border-radius:4px;cursor:pointer;">
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <label class="inline" style="font-weight:normal;font-size:12px;">End&nbsp;color</label>
+          <input type="color" id="pcu-ftr-c2" value="<%= ftr_c2 %>"
+                 oninput="pcuUpdateFooterPreview()"
+                 style="width:38px;height:28px;padding:1px;border:1px solid #ccc;border-radius:4px;cursor:pointer;">
+        </div>
+        <div id="pcu-ftr-preview"
+             style="height:32px;width:220px;border-radius:6px;border:1px solid #ddd;
+                    background:linear-gradient(135deg,<%= ftr_c1 %>,<%= ftr_c2 %>);
+                    display:flex;align-items:center;padding:0 12px;gap:8px;">
+          <span style="font-size:12px;font-weight:600;color:#16a34a;">Save</span>
+          <span style="font-size:12px;font-weight:600;color:#1d4ed8;">Save &amp; Child</span>
+          <span style="font-size:12px;font-weight:600;color:#475569;">Close</span>
+        </div>
+        <button type="button" onclick="pcuResetFooterColor()"
+                style="padding:4px 10px;font-size:12px;background:#9e9e9e;color:#fff;
+                       border:none;border-radius:3px;cursor:pointer;">Reset to default</button>
+      </div>
+      <%= hidden_field_tag 'settings[popup_footer_color]',
+            "#{ftr_c1},#{ftr_c2}", id: 'pcu-ftr-value' %>
+      <p class="pcu-hint">Choose the gradient colors for the popup footer (button bar).</p>
+    </div>
+
   </div>
 </div>
 
@@ -136,6 +194,27 @@ function pcuResetHeaderColor() {
   document.getElementById('pcu-hdr-c1').value = '#eff6ff';
   document.getElementById('pcu-hdr-c2').value = '#dbeafe';
   pcuUpdateHeaderPreview();
+}
+function pcuUpdateFontSize() {
+  var v = document.getElementById('pcu-fs-range').value;
+  document.getElementById('pcu-fs-display').textContent = v + 'px';
+  document.getElementById('pcu-fs-value').value = v;
+}
+function pcuResetFontSize() {
+  document.getElementById('pcu-fs-range').value = 12.5;
+  pcuUpdateFontSize();
+}
+function pcuUpdateFooterPreview() {
+  var c1 = document.getElementById('pcu-ftr-c1').value;
+  var c2 = document.getElementById('pcu-ftr-c2').value;
+  document.getElementById('pcu-ftr-preview').style.background =
+    'linear-gradient(135deg,' + c1 + ',' + c2 + ')';
+  document.getElementById('pcu-ftr-value').value = c1 + ',' + c2;
+}
+function pcuResetFooterColor() {
+  document.getElementById('pcu-ftr-c1').value = '#f8fafc';
+  document.getElementById('pcu-ftr-c2').value = '#eff6ff';
+  pcuUpdateFooterPreview();
 }
 </script>
 

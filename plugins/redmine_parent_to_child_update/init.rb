@@ -33,6 +33,10 @@ Redmine::Plugin.register :redmine_parent_to_child_update do
     # Comma-separated field names to exclude from popup (matched case-insensitively by name)
     'popup_excluded_fields' => 'Release Details',
     # Popup header gradient: two hex colors separated by comma (start, end)
-    'popup_header_color' => '#eff6ff,#dbeafe'
+    'popup_header_color' => '#eff6ff,#dbeafe',
+    # Popup base font size in px (all text scales from this)
+    'popup_font_size' => '12.5',
+    # Popup footer gradient: two hex colors separated by comma (start, end)
+    'popup_footer_color' => '#f8fafc,#eff6ff'
   }, partial: 'settings/redmine_parent_to_child_update_settings'
 end
