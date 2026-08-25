@@ -53,20 +53,18 @@ module RedmineParentToChildUpdate
                            .split(',').map(&:strip).reject(&:empty?).map(&:downcase)
 
         # ── Workflow field permissions for current user + child tracker ──────────
-        # The Fields permissions page applies the same rule across all status columns.
-        # We query ALL WorkflowPermission rows for (child tracker + user's roles) without
-        # filtering by status, then take the most restrictive rule seen across any status.
-        # Rule precedence: hidden(3) > readonly(2) > required(1).
+        # Read ALL rows from the Fields permissions tab (WorkflowPermission) for
+        # this tracker + the current user's roles, across every status column.
+        # This mirrors what the admin configures in Administration > Workflow >
+        # Fields permissions. The most restrictive rule wins when a field appears
+        # in multiple status columns.
+        # Rule priority: hidden(3) > readonly(2) > required(1)
         workflow_rules = begin
           role_ids = User.current.roles_for_project(@issue.project)
                          .select { |r| r.builtin == 0 }.map(&:id)
           rule_priority = { 'hidden' => 3, 'readonly' => 2, 'required' => 1 }
           rules = {}
           if role_ids.any?
-            # Query ALL WorkflowPermission rows for this tracker+role (no status filter).
-            # Admins often set the same rule across every status column, and we need to
-            # catch rules that live only in transition rows (old_status_id > 0).
-            # Take the most restrictive rule found across any status.
             WorkflowPermission
               .where(tracker_id: tracker_id, role_id: role_ids)
               .pluck(:field_name, :rule)
@@ -76,10 +74,6 @@ module RedmineParentToChildUpdate
                   rules[field_name] = rule
                 end
               end
-            # assigned_to_id: never force "required" in the child-creation popup.
-            # Redmine itself does not enforce assignee on new-issue creation even when
-            # a transition row has it marked required, so we match that behaviour.
-            rules.delete('assigned_to_id') if rules['assigned_to_id'] == 'required'
           end
           Rails.logger.warn("[PCU] workflow: tracker=#{tracker_id} roles=#{role_ids} rules=#{rules}")
           rules

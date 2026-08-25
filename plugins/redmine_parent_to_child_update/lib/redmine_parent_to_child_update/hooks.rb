@@ -570,6 +570,7 @@ module RedmineParentToChildUpdate
       # Initialise Redmine's wiki toolbar on the description textarea if available.
       # jsToolBar is already loaded on issue pages; we call it after a short delay so
       # the textarea is fully in the DOM before the toolbar wraps it.
+      _proj_id = ERB::Util.html_escape(issue.project.identifier.to_s)
       output << "    setTimeout(function(){"
       output << "      var descTa=document.getElementById('pcu-desc-textarea');"
       output << "      if(descTa&&typeof jsToolBar!=='undefined'&&!descTa.dataset.tbInit){"
@@ -577,6 +578,8 @@ module RedmineParentToChildUpdate
       output << "        try{"
       output << "          var tb=new jsToolBar(descTa);"
       output << "          if(tb.setHelpLink) tb.setHelpLink('');"
+      output << "          tb.previewPath='/preview/issue?project_id=#{_proj_id}';"
+      output << "          tb.previewOptions={method:'post',parameters:{authenticity_token:pcuCsrfToken()}};"
       output << "          tb.draw();"
       output << "        }catch(e){}"
       output << "      }"
