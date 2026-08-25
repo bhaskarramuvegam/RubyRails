@@ -21,6 +21,7 @@ module RedmineParentToChildUpdate
       'estimated_hours'  => { name: ->{ l(:field_estimated_hours) }, format: 'float'  },
       'done_ratio'       => { name: ->{ l(:field_done_ratio)      }, format: 'int'    },
       'description'      => { name: ->{ l(:field_description)     }, format: 'text'   },
+      'is_private'       => { name: ->{ l(:field_is_private)      }, format: 'bool'   },
     }.freeze
 
     # Return fields (standard + custom) to display in the child-creation popup.
@@ -83,7 +84,8 @@ module RedmineParentToChildUpdate
         # All other standard fields (category, version, dates, etc.) must be in
         # tracker.core_fields — exactly the same gate Redmine uses on the issue form.
         tracker_core = tracker.respond_to?(:core_fields) ? Array(tracker.core_fields).map(&:to_s) : []
-        always_std   = %w[status_id priority_id assigned_to_id author_id description]
+        # is_private is always available on every tracker (Redmine core field)
+        always_std   = %w[status_id priority_id assigned_to_id author_id description is_private]
         applicable_std_keys = STANDARD_POPUP_FIELDS.keys.select { |k|
           always_std.include?(k) || tracker_core.include?(k)
         }
@@ -111,6 +113,95 @@ module RedmineParentToChildUpdate
         }
         applicable_cf_map = applicable_cfs.index_by(&:id)  # id => cf
 
+        # ── TrackerFieldsConfiguration integration ────────────────────────────
+        # If the TFC plugin is active: apply its hidden-field rules so fields
+        # the admin hid for this project+tracker are also hidden in the popup,
+        # and collect any registered "extra fields" (Sprint, Color, etc.) so
+        # they appear in the popup as editable inputs.
+        tfc_extra_fields = []  # [{key:, label:, format:, possible_values:}]
+        tfc_active = begin
+          defined?(TrackerFieldsConfiguration) && TrackerFieldsConfiguration.enabled?
+        rescue
+          false
+        end
+        if tfc_active
+          pid_s = project_id.to_s
+          tid_s = tracker_id.to_s
+
+          # Remove std fields TFC has hidden for this project+tracker
+          tfc_hidden_std = TrackerFieldsConfiguration.hidden_standard_field_keys(pid_s, tid_s) rescue []
+          applicable_std_keys -= tfc_hidden_std
+
+          # Remove custom fields TFC has hidden
+          tfc_hidden_cf_ids = (TrackerFieldsConfiguration.hidden_custom_field_ids(pid_s, tid_s) rescue []).map(&:to_i)
+          applicable_cfs    = applicable_cfs.reject { |cf| tfc_hidden_cf_ids.include?(cf.id) }
+          applicable_cf_map = applicable_cfs.index_by(&:id)
+
+          # TFC field promotion ordering: build a map of cf_id => after_std_key
+          tfc_after = TrackerFieldsConfiguration.after_fields_for(pid_s, tid_s) rescue {}
+
+          # Collect registered extra fields (plugin-injected: Sprint, Color, etc.)
+          (TrackerFieldsConfiguration.extra_fields_for(pid_s, tid_s) rescue []).each do |ef|
+            next if (TrackerFieldsConfiguration.hidden_field_keys(pid_s, tid_s) rescue []).include?("ext_#{ef[:key]}")
+            tfc_extra_fields << {
+              key:            ef[:key],
+              label:          ef[:label].to_s,
+              format:         ef[:key] == 'color' ? 'color' : 'text',
+              possible_values: []
+            }
+          end
+        else
+          tfc_after  = {}
+        end
+
+        # ── Detect plugin-injected fields directly from the Issue model ───────
+        # These fields (Sprint, Color, Watchers) are added by external plugins
+        # (e.g. Redmine Agile). We detect them by checking whether the Issue
+        # model responds to the relevant attribute/method, so they appear even
+        # when TFC has not registered them as extra fields.
+        extra_key_set = tfc_extra_fields.map { |e| e[:key] }.to_set
+
+        # Watchers — always available in Redmine core
+        unless extra_key_set.include?('watcher_user_ids')
+          watcher_members = @issue.project.members.includes(:user).map { |m|
+            { value: m.user_id.to_s, label: m.user.name }
+          }
+          tfc_extra_fields << {
+            key: 'watcher_user_ids', label: 'Watchers', format: 'multiselect',
+            possible_values: watcher_members
+          }
+        end
+
+        # Color — Redmine Agile adds a `color` attribute to Issue
+        if !extra_key_set.include?('color') && @issue.respond_to?(:color)
+          tfc_extra_fields << { key: 'color', label: 'Color', format: 'color', possible_values: [] }
+        end
+
+        # Sprint — Redmine Agile: try common model names for sprint options
+        if !extra_key_set.include?('agile_sprint_id') && !extra_key_set.include?('sprint_id')
+          sprint_attr = [:agile_sprint_id, :sprint_id].find { |a| @issue.respond_to?(a) }
+          if sprint_attr
+            sprint_options = begin
+              sprint_class = ['AgileSprint', 'AgileVersion', 'Sprint'].map { |n|
+                Object.const_get(n) rescue nil
+              }.compact.first
+              if sprint_class && sprint_class.respond_to?(:where)
+                sprint_class.where(project_id: @issue.project.id).map { |s|
+                  { value: s.id.to_s, label: s.name.to_s }
+                }
+              else
+                []
+              end
+            rescue
+              []
+            end
+            tfc_extra_fields << {
+              key: sprint_attr.to_s, label: 'Sprint', format: 'select',
+              possible_values: sprint_options
+            }
+          end
+        end
+
         # ── Determine display order ───────────────────────────────────────────
         # Stored ids use "std_<key>" for standard fields and plain "<cf_id>" for custom fields.
         configured_ids = Array(popup_fields_cfg[tracker_id.to_s]).map(&:to_s).uniq
@@ -135,10 +226,35 @@ module RedmineParentToChildUpdate
             fid = "std_#{k}"; ordered_ids << fid unless in_order.include?(fid)
           end
         else
-          # No config saved yet: show all applicable std fields + all applicable CFs
-          ordered_ids = applicable_std_keys.map { |k| "std_#{k}" } +
-                        applicable_cfs.map { |cf| cf.id.to_s }
+          # No config saved yet: show all applicable std fields + all applicable CFs.
+          # If TFC has "after" promotion rules, interleave CFs after their anchor std field;
+          # otherwise fall back to tracker position order.
+          if tfc_after.any?
+            ordered_ids = applicable_std_keys.map { |k| "std_#{k}" }
+            # Insert each promoted CF right after its anchor std field
+            tfc_after.each do |cf_id_s, after_key|
+              cf_id = cf_id_s.to_i
+              next unless applicable_cf_map.key?(cf_id)
+              anchor = "std_#{after_key}"
+              idx = ordered_ids.index(anchor)
+              if idx
+                # Collect all CFs promoted after the same anchor, insert in position order
+                ordered_ids.insert(idx + 1, cf_id_s) unless ordered_ids.include?(cf_id_s)
+              else
+                ordered_ids << cf_id_s unless ordered_ids.include?(cf_id_s)
+              end
+            end
+            # Append any remaining CFs that have no promotion rule
+            applicable_cfs.each do |cf|
+              ordered_ids << cf.id.to_s unless ordered_ids.include?(cf.id.to_s)
+            end
+          else
+            ordered_ids = applicable_std_keys.map { |k| "std_#{k}" } +
+                          applicable_cfs.map { |cf| cf.id.to_s }
+          end
         end
+        # Always append TFC extra fields (Sprint, Color, etc.) at the end
+        tfc_extra_fields.each { |ef| ordered_ids << "ext_#{ef[:key]}" }
 
         # ── Build field objects in order ─────────────────────────────────────
         all_fields = ordered_ids.filter_map do |fid|
@@ -184,8 +300,21 @@ module RedmineParentToChildUpdate
             when 'fixed_version_id'
               opts[:possible_values] = @issue.project.shared_versions.open.map { |v| { value: v.id.to_s, label: v.name } }
               opts[:value] = @issue.fixed_version_id.to_s
+            when 'is_private'
+              opts[:possible_values] = [{ value: '0', label: 'No' }, { value: '1', label: 'Yes' }]
+              opts[:value] = @issue.is_private? ? '1' : '0'
             end
             opts
+          elsif fid.start_with?('ext_')
+            # TFC extra field (Sprint, Color, or any other plugin-injected field)
+            ef_key = fid.sub(/\Aext_/, '')
+            ef = tfc_extra_fields.find { |e| e[:key] == ef_key }
+            next unless ef
+            next if excluded_names.include?(ef[:label].downcase)
+            { id: "ext_#{ef_key}", name: ef[:label], field_format: ef[:format],
+              possible_values: ef[:possible_values], default_value: '',
+              value: '', is_required: false, is_readonly: false,
+              is_standard: false, is_extra: true, ext_key: ef_key }
           else
             cf_id = fid.sub(/\Acf_/, '').to_i
             next unless cf_id > 0
@@ -283,7 +412,27 @@ module RedmineParentToChildUpdate
             when 'priority_id'      then primary_child.priority_id      = value.to_i
             when 'category_id'      then primary_child.category_id      = value.to_i
             when 'fixed_version_id' then primary_child.fixed_version_id = value.to_i
+            when 'is_private'       then primary_child.is_private       = (value == '1')
             end
+          end
+        end
+
+        # Apply TFC extra field values (Sprint, Color, etc.) submitted from the popup.
+        # Extra fields are plugin-injected attributes — try setting them as Issue attributes
+        # (e.g. sprint_id, color) if the model responds to the setter; otherwise skip.
+        if params[:ext_fields].is_a?(ActionController::Parameters) || params[:ext_fields].is_a?(Hash)
+          params[:ext_fields].each do |key, value|
+            if key.to_s == 'watcher_user_ids'
+              # value may be a single id string or an array (from multiselect [])
+              Array(value).map(&:to_i).select { |uid| uid > 0 }.each do |uid|
+                u = User.find_by(id: uid)
+                primary_child.add_watcher(u) if u
+              end
+              next
+            end
+            next if value.blank?
+            setter = :"#{key}="
+            primary_child.send(setter, value) if primary_child.respond_to?(setter)
           end
         end
 
