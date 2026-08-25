@@ -9,6 +9,8 @@ module RedmineParentToChildUpdate
 
     # All supported standard Redmine issue fields for the popup.
     # Add new entries here as Redmine gains new fields — they auto-appear in admin config.
+    NO_INHERIT_DATE_ASSIGNEE_PATTERN = /task/i
+
     STANDARD_POPUP_FIELDS = {
       'status_id'        => { name: ->{ l(:field_status)          }, format: 'select' },
       'priority_id'      => { name: ->{ l(:field_priority)        }, format: 'select' },
@@ -38,10 +40,6 @@ module RedmineParentToChildUpdate
 
       # Trackers at/below the "Task" level should not inherit Planned Dates or
       # Assignee from the parent issue — they need independent scheduling.
-      # Match by name: any tracker whose name contains "task" (case-insensitive)
-      # or is a child-of-task tracker (detected by not being a top-level tracker
-      # that can itself have children configured to spawn further children).
-      NO_INHERIT_DATE_ASSIGNEE_PATTERN = /task/i unless defined?(NO_INHERIT_DATE_ASSIGNEE_PATTERN)
       no_inherit = tracker.name.match?(NO_INHERIT_DATE_ASSIGNEE_PATTERN)
 
       begin
@@ -53,12 +51,13 @@ module RedmineParentToChildUpdate
                            .split(',').map(&:strip).reject(&:empty?).map(&:downcase)
 
         # ── Workflow field permissions for current user + child tracker ──────────
-        # Read ALL rows from the Fields permissions tab (WorkflowPermission) for
-        # this tracker + the current user's roles, across every status column.
-        # This mirrors what the admin configures in Administration > Workflow >
-        # Fields permissions. The most restrictive rule wins when a field appears
-        # in multiple status columns.
-        # Rule priority: hidden(3) > readonly(2) > required(1)
+        # Read the Fields permissions grid exactly as configured in
+        # Administration > Workflow > Fields permissions for this role + tracker.
+        # The grid has columns for every status; a field configured as Required or
+        # Read-only in ANY status column is reflected in the popup with that badge.
+        # When a field has conflicting rules across statuses the most restrictive wins:
+        #   hidden(3) > readonly(2) > required(1)
+        # A blank cell (no rule) is simply ignored.
         workflow_rules = begin
           role_ids = User.current.roles_for_project(@issue.project)
                          .select { |r| r.builtin == 0 }.map(&:id)
@@ -69,6 +68,7 @@ module RedmineParentToChildUpdate
               .where(tracker_id: tracker_id, role_id: role_ids)
               .pluck(:field_name, :rule)
               .each do |field_name, rule|
+                next if rule.blank?
                 existing = rules[field_name]
                 if existing.nil? || rule_priority[rule].to_i > rule_priority[existing].to_i
                   rules[field_name] = rule

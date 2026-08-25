@@ -482,6 +482,11 @@ module RedmineParentToChildUpdate
       output << "      } else if(cf.field_format==='int'){"
       output << "        inp=document.createElement('input'); inp.type='number';"
       output << "        if(initVal) inp.value=initVal;"
+      output << "      } else if(cf.is_standard&&cf.std_key==='parent_issue_id'){"
+      output << "        inp=document.createElement('input'); inp.type='text';"
+      output << "        inp.readOnly=true;"
+      output << "        inp.style.cssText='width:100%;padding:7px 10px;font-size:var(--pcu-fs);box-sizing:border-box;height:auto;min-height:34px;background:#f8fafc;color:#475569;border:1.5px solid #e2e8f0;border-radius:7px;cursor:default;';"
+      output << "        if(initVal) inp.value='#'+initVal;"
       output << "      } else if(cf.field_format==='text'){"
       output << "        inp=document.createElement('textarea'); inp.rows=3;"
       output << "        inp.style.cssText='width:100%;padding:5px 8px;font-size:12px;box-sizing:border-box;min-height:80px;resize:vertical;';"
@@ -570,7 +575,9 @@ module RedmineParentToChildUpdate
       # Initialise Redmine's wiki toolbar on the description textarea if available.
       # jsToolBar is already loaded on issue pages; we call it after a short delay so
       # the textarea is fully in the DOM before the toolbar wraps it.
-      _proj_id = ERB::Util.html_escape(issue.project.identifier.to_s)
+      _proj_id   = ERB::Util.url_encode(issue.project.identifier.to_s)
+      _url_root  = (Redmine::Utils.relative_url_root.to_s rescue '').chomp('/')
+      _preview_url = "#{_url_root}/preview/issue?project_id=#{_proj_id}"
       output << "    setTimeout(function(){"
       output << "      var descTa=document.getElementById('pcu-desc-textarea');"
       output << "      if(descTa&&typeof jsToolBar!=='undefined'&&!descTa.dataset.tbInit){"
@@ -578,8 +585,7 @@ module RedmineParentToChildUpdate
       output << "        try{"
       output << "          var tb=new jsToolBar(descTa);"
       output << "          if(tb.setHelpLink) tb.setHelpLink('');"
-      output << "          tb.previewPath='/preview/issue?project_id=#{_proj_id}';"
-      output << "          tb.previewOptions={method:'post',parameters:{authenticity_token:pcuCsrfToken()}};"
+      output << "          tb.previewPath='#{_preview_url}';"
       output << "          tb.draw();"
       output << "        }catch(e){}"
       output << "      }"
