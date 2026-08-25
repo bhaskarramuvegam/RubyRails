@@ -22,6 +22,7 @@ module RedmineParentToChildUpdate
       'done_ratio'       => { name: ->{ l(:field_done_ratio)      }, format: 'int'    },
       'description'      => { name: ->{ l(:field_description)     }, format: 'text'   },
       'is_private'       => { name: ->{ l(:field_is_private)      }, format: 'bool'   },
+      'parent_issue_id'  => { name: ->{ l(:field_parent_issue)    }, format: 'text'   },
     }.freeze
 
     # Return fields (standard + custom) to display in the child-creation popup.
@@ -93,7 +94,7 @@ module RedmineParentToChildUpdate
         # tracker.core_fields — exactly the same gate Redmine uses on the issue form.
         tracker_core = tracker.respond_to?(:core_fields) ? Array(tracker.core_fields).map(&:to_s) : []
         # is_private is always available on every tracker (Redmine core field)
-        always_std   = %w[status_id priority_id assigned_to_id author_id description is_private]
+        always_std   = %w[status_id priority_id assigned_to_id author_id description is_private parent_issue_id]
         applicable_std_keys = STANDARD_POPUP_FIELDS.keys.select { |k|
           always_std.include?(k) || tracker_core.include?(k)
         }
@@ -311,6 +312,9 @@ module RedmineParentToChildUpdate
             when 'is_private'
               opts[:possible_values] = [{ value: '0', label: 'No' }, { value: '1', label: 'Yes' }]
               opts[:value] = @issue.is_private? ? '1' : '0'
+            when 'parent_issue_id'
+              opts[:value]      = @issue.id.to_s
+              opts[:is_readonly] = true
             end
             opts
           elsif fid.start_with?('ext_')
