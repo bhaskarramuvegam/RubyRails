@@ -35,6 +35,14 @@ module RedmineParentToChildUpdate
       tracker = Tracker.find_by(id: tracker_id)
       return render json: { fields: [] } unless tracker
 
+      # Trackers at/below the "Task" level should not inherit Planned Dates or
+      # Assignee from the parent issue — they need independent scheduling.
+      # Match by name: any tracker whose name contains "task" (case-insensitive)
+      # or is a child-of-task tracker (detected by not being a top-level tracker
+      # that can itself have children configured to spawn further children).
+      NO_INHERIT_DATE_ASSIGNEE_PATTERN = /task/i unless defined?(NO_INHERIT_DATE_ASSIGNEE_PATTERN)
+      no_inherit = tracker.name.match?(NO_INHERIT_DATE_ASSIGNEE_PATTERN)
+
       begin
         plugin_settings  = Setting.plugin_redmine_parent_to_child_update || {}
         popup_fields_cfg = plugin_settings['tracker_popup_fields'] || {}
@@ -279,14 +287,14 @@ module RedmineParentToChildUpdate
               default_status = (IssueStatus.find_by(is_default: true) rescue nil) || IssueStatus.first
               opts[:value] = default_status&.id.to_s || ''
             when 'estimated_hours' then opts[:value] = @issue.estimated_hours.to_s
-            when 'start_date'      then opts[:value] = @issue.start_date&.to_s || ''
-            when 'due_date'        then opts[:value] = @issue.due_date&.to_s || ''
+            when 'start_date'      then opts[:value] = no_inherit ? '' : (@issue.start_date&.to_s || '')
+            when 'due_date'        then opts[:value] = no_inherit ? '' : (@issue.due_date&.to_s || '')
             when 'done_ratio'      then opts[:value] = @issue.done_ratio.to_s
             when 'description'     then opts[:value] = @issue.description.to_s
             when 'assigned_to_id'
               opts[:possible_values] = @issue.project.members.includes(:user)
                 .map { |m| { value: m.user_id.to_s, label: m.user.name } }
-              opts[:value] = @issue.assigned_to_id.to_s
+              opts[:value] = no_inherit ? '' : @issue.assigned_to_id.to_s
             when 'author_id'
               opts[:possible_values] = @issue.project.members.includes(:user)
                 .map { |m| { value: m.user_id.to_s, label: m.user.name } }
