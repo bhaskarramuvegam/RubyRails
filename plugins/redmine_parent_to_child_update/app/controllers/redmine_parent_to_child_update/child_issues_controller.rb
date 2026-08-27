@@ -51,21 +51,37 @@ module RedmineParentToChildUpdate
                            .split(',').map(&:strip).reject(&:empty?).map(&:downcase)
 
         # ── Workflow field permissions for current user + child tracker ──────────
-        # Read the Fields permissions grid exactly as configured in
-        # Administration > Workflow > Fields permissions for this role + tracker.
-        # The grid has columns for every status; a field configured as Required or
-        # Read-only in ANY status column is reflected in the popup with that badge.
-        # When a field has conflicting rules across statuses the most restrictive wins:
-        #   hidden(3) > readonly(2) > required(1)
-        # A blank cell (no rule) is simply ignored.
+        # The popup creates a NEW issue, so only the initial status column applies.
+        # In Redmine's Fields permissions grid the relevant column is the one for
+        # the tracker's default/initial status (old_status_id = default_status_id).
+        # Rules stored for other statuses ("In Progress", "Resolved", …) apply only
+        # when EDITING an existing issue already in that status — not for creation.
+        # Rule priority: hidden(3) > readonly(2) > required(1).
         workflow_rules = begin
           role_ids = User.current.roles_for_project(@issue.project)
                          .select { |r| r.builtin == 0 }.map(&:id)
+
+          # Use the status_id param if the user already changed the Status dropdown
+          # in the popup; otherwise fall back to the tracker's own default status.
+          # Redmine 4.0+ stores a per-tracker default_status_id on the Tracker model.
+          selected_status_id = params[:status_id].to_i
+          workflow_status_id = if selected_status_id > 0
+                                 selected_status_id
+                               elsif tracker.respond_to?(:default_status_id) && tracker.default_status_id.to_i > 0
+                                 tracker.default_status_id.to_i
+                               elsif tracker.respond_to?(:default_status) && tracker.default_status
+                                 tracker.default_status.id.to_i
+                               else
+                                 IssueStatus.find_by(is_default: true)&.id.to_i ||
+                                 IssueStatus.order(:position).first&.id.to_i || 0
+                               end
+
           rule_priority = { 'hidden' => 3, 'readonly' => 2, 'required' => 1 }
           rules = {}
-          if role_ids.any?
+          if role_ids.any? && workflow_status_id > 0
             WorkflowPermission
-              .where(tracker_id: tracker_id, role_id: role_ids)
+              .where(tracker_id: tracker_id, role_id: role_ids,
+                     old_status_id: workflow_status_id)
               .pluck(:field_name, :rule)
               .each do |field_name, rule|
                 next if rule.blank?
@@ -75,7 +91,7 @@ module RedmineParentToChildUpdate
                 end
               end
           end
-          Rails.logger.warn("[PCU] workflow: tracker=#{tracker_id} roles=#{role_ids} rules=#{rules}")
+          Rails.logger.warn("[PCU] workflow: tracker=#{tracker_id} status=#{workflow_status_id} roles=#{role_ids} rules=#{rules}")
           rules
         rescue => e
           Rails.logger.warn("[PCU] workflow error: #{e.message}")
