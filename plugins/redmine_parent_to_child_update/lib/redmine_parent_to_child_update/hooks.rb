@@ -2,6 +2,7 @@
 
 module RedmineParentToChildUpdate
   class Hooks < Redmine::Hook::ViewListener
+    include Rails.application.routes.url_helpers
 
     # ─── 1. NEW-ISSUE FORM ────────────────────────────────────────────────────
     # We only inject the shared CSS here.  The blocking form-level popup has been
@@ -130,7 +131,7 @@ module RedmineParentToChildUpdate
       output << "  display:none;position:fixed;z-index:99999;left:0;top:0;"
       output << "  width:100%;height:100%;"
       output << "  background:rgba(15,23,42,0.6);backdrop-filter:blur(4px);"
-      output << "  font-family:'Inter',system-ui,-apple-system,sans-serif;overflow-y:auto;"
+      output << "  font-family:'Inter',system-ui,-apple-system,sans-serif;overflow:visible;"
       output << "  animation:pcuFadeIn 0.18s ease;}"
       output << "@keyframes pcuFadeIn{from{opacity:0}to{opacity:1}}"
       # Modal box
@@ -138,8 +139,11 @@ module RedmineParentToChildUpdate
       output << "  background:#fff;margin:1.5% auto;padding:0;"
       output << "  border-radius:12px;width:1380px;max-width:98%;"
       output << "  box-shadow:0 20px 60px rgba(0,0,0,0.18),0 4px 16px rgba(0,0,0,0.1);"
-      output << "  max-height:96vh;overflow-y:auto;border:1px solid rgba(0,0,0,0.06);"
+      output << "  max-height:96vh;overflow:visible;border:1px solid rgba(0,0,0,0.06);"
       output << "  animation:pcuSlideUp 0.2s ease;}"
+      # Scroll the modal body instead so the box itself stays overflow:visible,
+      # allowing jstoolbar table/colour pickers to escape the modal boundary.
+      output << "#pcu-child-modal .pcu-modal-body{max-height:calc(96vh - 120px);overflow-y:auto;}"
       output << "@keyframes pcuSlideUp{from{transform:translateY(16px);opacity:0.6}to{transform:translateY(0);opacity:1}}"
       # Header
       raw_hdr = (Setting.plugin_redmine_parent_to_child_update['popup_header_color'] rescue nil).to_s
@@ -221,11 +225,21 @@ module RedmineParentToChildUpdate
       output << ".pcu-badge-std{background:#dbeafe;color:#1d4ed8;}"
       output << ".pcu-badge-req{background:#fee2e2;color:#b91c1c;}"
       output << ".pcu-badge-ro{background:#f1f5f9;color:#64748b;border:1px solid #cbd5e1;}"
-      # jsToolBar
-      output << "#pcu-child-modal .jstBlock{width:100%;box-sizing:border-box;}"
-      output << "#pcu-child-modal .jstEditor{width:100% !important;}"
+      # jsToolBar — allow table picker and other dropdowns to overflow the modal
+      output << "#pcu-child-modal .jstBlock{width:100%;box-sizing:border-box;overflow:visible;}"
+      output << "#pcu-child-modal .jstEditor{width:100% !important;overflow:visible;}"
       output << "#pcu-child-modal .jstEditor textarea{height:80px;width:100% !important;box-sizing:border-box;"
       output << "  border:1.5px solid #e2e8f0;border-radius:7px;}"
+      # jstoolbar toolbar row must allow its pickers to overflow
+      output << "#pcu-child-modal .jstElements{overflow:visible;position:relative;}"
+      # Table picker and colour/link pickers rendered as absolute children of toolbar buttons
+      output << "#pcu-child-modal .jstb_table_picker,"
+      output << "#pcu-child-modal div[id$='_picker'],"
+      output << "#pcu-child-modal .jstb_table>div,"
+      output << "#pcu-child-modal .jstb_color>div{"
+      output << "  z-index:2147483647 !important;position:absolute;}"
+      # Scrollable required-fields area stays visible so pickers escape
+      output << "#pcu-required-fields{overflow:visible;}"
       # Spin-button removal
       output << "#pcu-child-modal input[type=number]{-moz-appearance:textfield;appearance:textfield;}"
       output << "#pcu-child-modal input[type=number]::-webkit-outer-spin-button,"
@@ -600,20 +614,84 @@ module RedmineParentToChildUpdate
       # Initialise Redmine's wiki toolbar on the description textarea if available.
       # jsToolBar is already loaded on issue pages; we call it after a short delay so
       # the textarea is fully in the DOM before the toolbar wraps it.
-      _proj_id   = ERB::Util.url_encode(issue.project.identifier.to_s)
-      _url_root  = (Redmine::Utils.relative_url_root.to_s rescue '').chomp('/')
-      _preview_url = "#{_url_root}/preview/issue?project_id=#{_proj_id}"
+      _preview_url = begin
+        preview_issue_path(project_id: issue.project.identifier)
+      rescue
+        begin
+          Rails.application.routes.url_helpers.preview_issue_path(
+            project_id: issue.project.identifier
+          )
+        rescue
+          _url_root = (Redmine::Utils.relative_url_root.to_s rescue '').chomp('/')
+          _proj_id  = ERB::Util.url_encode(issue.project.identifier.to_s)
+          "#{_url_root}/preview/issue?project_id=#{_proj_id}"
+        end
+      end
       output << "    setTimeout(function(){"
       output << "      var descTa=document.getElementById('pcu-desc-textarea');"
-      output << "      if(descTa&&typeof jsToolBar!=='undefined'&&!descTa.dataset.tbInit){"
-      output << "        descTa.dataset.tbInit='1';"
-      output << "        try{"
-      output << "          var tb=new jsToolBar(descTa);"
-      output << "          if(tb.setHelpLink) tb.setHelpLink('');"
-      output << "          tb.previewPath='#{_preview_url}';"
-      output << "          tb.draw();"
-      output << "        }catch(e){}"
-      output << "      }"
+      output << "      if(!descTa||typeof jsToolBar==='undefined'||descTa.dataset.tbInit) return;"
+      output << "      descTa.dataset.tbInit='1';"
+      output << "      try{"
+      output << "        var tb=new jsToolBar(descTa);"
+      output << "        if(tb.setHelpLink) tb.setHelpLink('');"
+      # Leave previewPath unset so jstoolbar does NOT fire its own XHR (which would race and blank the panel)
+      output << "        tb.draw();"
+      # MutationObserver watches only style attribute changes (NOT childList) so our own
+      # innerHTML writes don't re-trigger the observer and cause an infinite fetch loop.
+      output << "        setTimeout(function(){"
+      output << "          var jstBlock=descTa.parentNode;"
+      output << "          while(jstBlock&&!jstBlock.classList.contains('jstBlock')) jstBlock=jstBlock.parentNode;"
+      output << "          if(!jstBlock) return;"
+      output << "          var previewBox=jstBlock.querySelector('.jstPreview,.wiki-preview');"
+      output << "          var _prevFetching=false;"
+      output << "          new MutationObserver(function(mutations){"
+      output << "            mutations.forEach(function(m){"
+      output << "              var t=m.target;"
+      # Detect jstPreview becoming visible (style attribute on the previewBox element itself)
+      output << "              if(previewBox&&t===previewBox&&m.attributeName==='style'){"
+      output << "                if(previewBox.style.display==='none') return;" # hidden — ignore
+      output << "                if(_prevFetching) return; _prevFetching=true;"
+      output << "                previewBox.innerHTML='<em style=\"color:#64748b\">Loading preview…</em>';"
+      output << "                var text=descTa.value;"
+      output << "                var token=(document.querySelector('meta[name=csrf-token]')||{}).content||'';"
+      output << "                fetch('#{_preview_url}',{"
+      output << "                  method:'POST',"
+      output << "                  headers:{'Content-Type':'application/x-www-form-urlencoded','X-Requested-With':'XMLHttpRequest'},"
+      output << "                  credentials:'same-origin',"
+      output << "                  body:'text='+encodeURIComponent(text)+'&authenticity_token='+encodeURIComponent(token)+'&project_id=#{ERB::Util.url_encode(issue.project.identifier.to_s)}'"
+      output << "                }).then(function(r){return r.text();})"
+      output << "                  .then(function(html){"
+      # Wrap in .wiki so Redmine's wiki stylesheet (headings, bold, lists, code) applies
+      output << "                    previewBox.innerHTML='<div class=\"wiki\">'+( html||'<em style=\"color:#94a3b8\">(empty)</em>' )+'</div>';"
+      output << "                    _prevFetching=false;"
+      output << "                  })"
+      output << "                  .catch(function(e){previewBox.innerHTML='<em style=\"color:#c62828\">Preview failed.</em>';_prevFetching=false;});"
+      output << "                return;"
+      output << "              }"
+      output << "            });"
+      # Watch only style attributes, no childList — prevents innerHTML writes from re-triggering
+      output << "          }).observe(jstBlock,{attributes:true,attributeFilter:['style'],subtree:true});"
+      # Table/colour picker portal: move every dropdown div inside the toolbar
+      # to document.body so modal overflow can never clip it.
+      # jstoolbar keeps its reference to the same DOM node for show/hide.
+      output << "          var jstEls=jstBlock.querySelector('.jstElements');"
+      output << "          if(jstEls){"
+      output << "            jstEls.querySelectorAll('span>div,span>table,a>div,a>table').forEach(function(picker){"
+      output << "              var btn=picker.parentNode;"
+      output << "              document.body.appendChild(picker);"
+      output << "              picker.style.position='fixed';"
+      output << "              picker.style.zIndex='2147483647';"
+      output << "              new MutationObserver(function(){"
+      output << "                var d=picker.style.display||window.getComputedStyle(picker).display;"
+      output << "                if(d==='none') return;"
+      output << "                var br=btn.getBoundingClientRect();"
+      output << "                picker.style.top=(br.bottom+2)+'px';"
+      output << "                picker.style.left=br.left+'px';"
+      output << "              }).observe(picker,{attributes:true,attributeFilter:['style']});"
+      output << "            });"
+      output << "          }"
+      output << "        },300);"
+      output << "      }catch(e){ console.error('[PCU] toolbar init',e); }"
       output << "    },80);"
       # Restore saved values after field rebuild (used when Status changes)
       output << "    if(savedValues) setTimeout(function(){ pcuRestoreFieldValues(savedValues); },120);"
