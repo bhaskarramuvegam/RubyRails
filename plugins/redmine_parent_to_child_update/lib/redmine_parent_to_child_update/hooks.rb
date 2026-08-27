@@ -232,21 +232,20 @@ module RedmineParentToChildUpdate
       output << "  border:1.5px solid #e2e8f0;border-radius:7px;}"
       # jstoolbar toolbar row must allow its pickers to overflow
       output << "#pcu-child-modal .jstElements{overflow:visible;position:relative;}"
-      # Table picker and colour/link pickers rendered as absolute children of toolbar buttons
-      output << "#pcu-child-modal .jstb_table_picker,"
-      output << "#pcu-child-modal div[id$='_picker'],"
-      output << "#pcu-child-modal .jstb_table>div,"
-      output << "#pcu-child-modal .jstb_color>div{"
-      output << "  z-index:2147483647 !important;position:absolute;}"
+      # Pickers are portaled to body by JS — no modal-scoped CSS needed for them
       # Scrollable required-fields area stays visible so pickers escape
       output << "#pcu-required-fields{overflow:visible;}"
       # Spin-button removal
       output << "#pcu-child-modal input[type=number]{-moz-appearance:textfield;appearance:textfield;}"
       output << "#pcu-child-modal input[type=number]::-webkit-outer-spin-button,"
       output << "#pcu-child-modal input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}"
-      # Status message
-      output << "#pcu-status-msg{display:none;margin:10px 0 0;padding:10px 14px;border-radius:8px;"
-      output << "  font-size:var(--pcu-fs);font-weight:500;border:1px solid transparent;}"
+      # Snackbar — fixed at bottom-centre of viewport, visible without scrolling
+      output << "#pcu-snackbar{position:fixed;bottom:32px;left:50%;transform:translateX(-50%) translateY(20px);"
+      output << "  z-index:2147483646;min-width:280px;max-width:520px;padding:13px 22px;"
+      output << "  border-radius:10px;font-size:14px;font-weight:600;text-align:center;"
+      output << "  box-shadow:0 6px 24px rgba(0,0,0,0.18);pointer-events:none;"
+      output << "  opacity:0;transition:opacity 0.25s,transform 0.25s;}"
+      output << "#pcu-snackbar.pcu-snack-show{opacity:1;transform:translateX(-50%) translateY(0);}"
       # Files row
       output << ".pcu-files-row{margin-top:14px;padding:12px 0 0;border-top:1px solid #f1f5f9;}"
       output << ".pcu-files-row label{color:#374151;font-size:var(--pcu-fs-sm);font-weight:500;margin-bottom:6px;display:block;}"
@@ -352,7 +351,6 @@ module RedmineParentToChildUpdate
       output << "      </div>"
       output << "    </div>"
 
-      output << "    <div id='pcu-status-msg'></div>"
       output << "  </div>"
 
       # Footer buttons
@@ -368,6 +366,8 @@ module RedmineParentToChildUpdate
       output << "  </div>"
       output << "  </div>"
       output << "</div>"
+      # Snackbar element — lives outside the modal so it's never clipped or scrolled away
+      output << "<div id='pcu-snackbar'></div>"
 
       # ── JavaScript ────────────────────────────────────────────────────────
       output << "<script type='text/javascript'>"
@@ -389,8 +389,8 @@ module RedmineParentToChildUpdate
       output << "function pcuCloseModal(){"
       output << "  document.getElementById('pcu-child-modal').style.display='none';"
       output << "  document.getElementById('pcu-required-fields').innerHTML='';"
-      output << "  var msg=document.getElementById('pcu-status-msg');"
-      output << "  if(msg){msg.style.display='none';msg.textContent='';}"
+      output << "  var msg=document.getElementById('pcu-snackbar');"
+      output << "  if(msg){msg.classList.remove('pcu-snack-show');msg.textContent='';}"
       output << "  document.getElementById('pcu-btn-save').disabled=false;"
       output << "  var sc=document.getElementById('pcu-btn-save-child');"
       output << "  if(sc) sc.disabled=false;"
@@ -405,8 +405,8 @@ module RedmineParentToChildUpdate
       output << "  });"
       output << "  var fi=document.getElementById('pcu-files');"
       output << "  if(fi) fi.value='';"
-      output << "  var msg=document.getElementById('pcu-status-msg');"
-      output << "  if(msg){msg.style.display='none';msg.textContent='';}"
+      output << "  var msg=document.getElementById('pcu-snackbar');"
+      output << "  if(msg){msg.classList.remove('pcu-snack-show');msg.textContent='';}"
       output << "}"
 
       # Update buttons and load fields when tracker changes
@@ -432,6 +432,73 @@ module RedmineParentToChildUpdate
       output << "  pcuLoadRequiredFields(parentId);"
       output << "}"
 
+      # Searchable dropdown wrapper — replaces a <select> with a custom
+      # search-input + dropdown list so users can type to filter options.
+      # The original <select> is kept hidden so form submission still works.
+      output << "function pcuMakeSearchable(sel){"
+      output << "  if(!sel||sel.tagName!=='SELECT'||sel._pcuSearchable) return;"
+      output << "  sel._pcuSearchable=true;"
+      output << "  sel.style.display='none';"
+      output << "  var wrap=document.createElement('div');"
+      output << "  wrap.style.cssText='position:relative;width:100%;';"
+      output << "  sel.parentNode.insertBefore(wrap,sel);"
+      output << "  wrap.appendChild(sel);"
+      output << "  var inp=document.createElement('input');"
+      output << "  inp.type='text'; inp.autocomplete='off'; inp.placeholder='Search…';"
+      output << "  inp.style.cssText='width:100%;padding:7px 28px 7px 10px;font-size:var(--pcu-fs);box-sizing:border-box;border:1.5px solid #e2e8f0;border-radius:7px;cursor:pointer;background:#fff url(\"data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2712%27 height=%2212%27 viewBox=%270 0 12 12%27%3E%3Cpath d=%27M6 8L1 3h10z%27 fill=%27%2364748b%27/%3E%3C/svg%3E\") no-repeat right 8px center;';"
+      output << "  wrap.appendChild(inp);"  # MUST add input to DOM before syncing label
+      # Show selected label initially
+      output << "  function pcuSyncLabel(){"
+      output << "    var opt=sel.options[sel.selectedIndex];"
+      output << "    inp.value=opt&&opt.value?opt.textContent:'';"
+      output << "    inp.placeholder=opt&&opt.value?'':( sel.options[0]?sel.options[0].textContent:'-- Select --' );"
+      output << "  } pcuSyncLabel();"
+      output << "  var dd=document.createElement('div');"
+      output << "  dd.style.cssText='display:none;position:fixed;background:#fff;border:1px solid #cbd5e1;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,0.12);z-index:2147483640;min-width:200px;max-height:220px;overflow-y:auto;';"
+      output << "  document.body.appendChild(dd);"
+      output << "  function pcuBuildOpts(filter){"
+      output << "    dd.innerHTML='';"
+      output << "    var f=(filter||'').toLowerCase();"
+      output << "    Array.from(sel.options).forEach(function(o){"
+      output << "      if(f&&o.textContent.toLowerCase().indexOf(f)<0) return;"
+      output << "      var li=document.createElement('div');"
+      output << "      li.textContent=o.textContent;"
+      output << "      li.style.cssText='padding:7px 12px;cursor:pointer;font-size:var(--pcu-fs);';"
+      output << "      if(o.value===sel.value) li.style.background='#eff6ff';"
+      output << "      li.addEventListener('mousedown',function(e){"
+      output << "        e.preventDefault();"
+      output << "        sel.value=o.value;"
+      output << "        sel.dispatchEvent(new Event('change',{bubbles:true}));"
+      output << "        pcuSyncLabel(); dd.style.display='none';"
+      output << "      });"
+      output << "      li.addEventListener('mouseover',function(){ li.style.background='#f1f5f9'; });"
+      output << "      li.addEventListener('mouseout',function(){ li.style.background=o.value===sel.value?'#eff6ff':''; });"
+      output << "      dd.appendChild(li);"
+      output << "    });"
+      output << "  }"
+      output << "  function pcuOpenDd(){"
+      output << "    if(sel.disabled) return;"
+      output << "    pcuBuildOpts('');" # show all options on open
+      output << "    var br=inp.getBoundingClientRect();"
+      output << "    dd.style.top=(br.bottom+2)+'px'; dd.style.left=br.left+'px'; dd.style.width=br.width+'px';"
+      output << "    dd.style.display='block';"
+      output << "  }"
+      output << "  inp.addEventListener('focus',function(){ inp.value=''; pcuOpenDd(); });"
+      output << "  inp.addEventListener('input',function(){ pcuBuildOpts(inp.value); dd.style.display='block'; });"
+      output << "  inp.addEventListener('blur',function(){ setTimeout(function(){ dd.style.display='none'; pcuSyncLabel(); },150); });"
+      output << "  inp.addEventListener('click',function(){ if(dd.style.display==='none') pcuOpenDd(); });"
+      # Sync disabled/background state from the hidden select
+      output << "  var selObs=new MutationObserver(function(){"
+      output << "    inp.disabled=sel.disabled;"
+      output << "    inp.style.background=sel.disabled?'#f5f5f5 none':'#fff url(\"data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2712%27 height=%2212%27 viewBox=%270 0 12 12%27%3E%3Cpath d=%27M6 8L1 3h10z%27 fill=%27%2364748b%27/%3E%3C/svg%3E\") no-repeat right 8px center';"
+      output << "    inp.style.color=sel.disabled?'#888':'';"
+      output << "    inp.style.cursor=sel.disabled?'not-allowed':'pointer';"
+      output << "  });"
+      output << "  selObs.observe(sel,{attributes:true,attributeFilter:['disabled']});"
+      # Expose value getter so pcuSaveFieldValues/pcuRestoreFieldValues still work
+      output << "  sel._pcuSearchWrap={ syncLabel:pcuSyncLabel };"
+      output << "}"
+
       # Save current field values keyed by field id (std_key or cf_id or ext_key).
       output << "function pcuSaveFieldValues(){"
       output << "  var saved={};"
@@ -452,7 +519,10 @@ module RedmineParentToChildUpdate
       output << "    if(inp.dataset.fieldFormat==='multiselect'&&inp._msWrap){"
       output << "      inp._msWrap._selected=saved[key]||{};"
       output << "      if(typeof msPills==='function') msPills();"
-      output << "    } else if(saved[key]!==undefined&&saved[key]!=='') inp.value=saved[key];"
+      output << "    } else if(saved[key]!==undefined&&saved[key]!==''){"
+      output << "      inp.value=saved[key];"
+      output << "      if(inp._pcuSearchWrap) inp._pcuSearchWrap.syncLabel();"
+      output << "    }"
       output << "  });"
       output << "}"
       # Load admin-configured popup fields for selected tracker + current status
@@ -610,6 +680,7 @@ module RedmineParentToChildUpdate
       output << "      }"
       output << "      if(inp.type==='number'){inp.addEventListener('wheel',function(e){e.preventDefault();},{passive:false});}"
       output << "      inp.className='pcu-req-cf'; w.appendChild(inp); box.appendChild(w);"
+      output << "      if(inp.tagName==='SELECT') pcuMakeSearchable(inp);"
       output << "    });"
       # Initialise Redmine's wiki toolbar on the description textarea if available.
       # jsToolBar is already loaded on issue pages; we call it after a short delay so
@@ -671,24 +742,43 @@ module RedmineParentToChildUpdate
       output << "            });"
       # Watch only style attributes, no childList — prevents innerHTML writes from re-triggering
       output << "          }).observe(jstBlock,{attributes:true,attributeFilter:['style'],subtree:true});"
-      # Table/colour picker portal: move every dropdown div inside the toolbar
-      # to document.body so modal overflow can never clip it.
-      # jstoolbar keeps its reference to the same DOM node for show/hide.
+      # Table/colour picker portal: move every toolbar dropdown div to document.body
+      # so no ancestor overflow can clip it. Works for both eagerly-created pickers
+      # (present after draw()) and lazily-created ones (added on first click).
       output << "          var jstEls=jstBlock.querySelector('.jstElements');"
       output << "          if(jstEls){"
-      output << "            jstEls.querySelectorAll('span>div,span>table,a>div,a>table').forEach(function(picker){"
-      output << "              var btn=picker.parentNode;"
+      output << "            function pcuPortalPicker(picker,btn){"
+      output << "              if(picker._pcuPortaled) return; picker._pcuPortaled=true;"
       output << "              document.body.appendChild(picker);"
+      # Set position/z-index individually — do NOT use cssText which wipes display:none
       output << "              picker.style.position='fixed';"
       output << "              picker.style.zIndex='2147483647';"
-      output << "              new MutationObserver(function(){"
+      output << "              picker.style.top='-9999px';" # park off-screen until positioned
+      output << "              picker.style.left='-9999px';"
+      output << "              function pcuPosPicker(){"
       output << "                var d=picker.style.display||window.getComputedStyle(picker).display;"
       output << "                if(d==='none') return;"
       output << "                var br=btn.getBoundingClientRect();"
       output << "                picker.style.top=(br.bottom+2)+'px';"
       output << "                picker.style.left=br.left+'px';"
-      output << "              }).observe(picker,{attributes:true,attributeFilter:['style']});"
-      output << "            });"
+      output << "              }"
+      # Position immediately — picker may already be visible (lazy creation on first click)
+      output << "              pcuPosPicker();"
+      # Re-position whenever jstoolbar toggles it visible on subsequent clicks
+      output << "              new MutationObserver(pcuPosPicker).observe(picker,{attributes:true,attributeFilter:['style']});"
+      output << "            }"
+      # Portal pickers already in the DOM right after draw()
+      output << "            jstEls.querySelectorAll('span>div,span>table,a>div,a>table').forEach(function(p){ pcuPortalPicker(p,p.parentNode); });"
+      # Watch for lazily-created pickers added on first toolbar button click
+      output << "            new MutationObserver(function(muts){"
+      output << "              muts.forEach(function(m){"
+      output << "                m.addedNodes.forEach(function(n){"
+      output << "                  if(n.nodeType!==1) return;"
+      output << "                  var btn=n.parentNode;"
+      output << "                  if(btn&&(btn.tagName==='SPAN'||btn.tagName==='A')&&jstEls.contains(btn)) pcuPortalPicker(n,btn);"
+      output << "                });"
+      output << "              });"
+      output << "            }).observe(jstEls,{childList:true,subtree:true});"
       output << "          }"
       output << "        },300);"
       output << "      }catch(e){ console.error('[PCU] toolbar init',e); }"
@@ -771,15 +861,13 @@ module RedmineParentToChildUpdate
       output << "    } else if(json.redirect_to){"
       output << "      pcuShowStatus('Tracker created! Loading child creation...','#f0fdf4','#166534');"
       output << "      setTimeout(function(){"
-      output << "        window.onbeforeunload=null;"
-      output << "        if(window.jQuery) jQuery(window).off('beforeunload');"
+      output << "        pcuClearBeforeUnload();"
       output << "        window.location.href=json.redirect_to;"
-      output << "      },300);"
+      output << "      },500);"
       output << "    } else {"
       output << "      pcuShowStatus('Tracker created successfully!','#f0fdf4','#166534');"
       output << "      setTimeout(function(){"
-      output << "        window.onbeforeunload=null;"
-      output << "        if(window.jQuery) jQuery(window).off('beforeunload');"
+      output << "        pcuClearBeforeUnload();"
       output << "        window.location.reload();"
       output << "      },1200);"
       output << "    }"
@@ -790,11 +878,25 @@ module RedmineParentToChildUpdate
       output << "  });"
       output << "}"
 
+      # Strip all beforeunload handlers so Redmine's file-attachment warning
+      # does not block navigation after a successful save.
+      output << "function pcuClearBeforeUnload(){"
+      output << "  try{ window.onbeforeunload=null; }catch(e){}"
+      output << "  try{ if(window.jQuery){ jQuery(window).off('beforeunload'); jQuery(document).off('beforeunload'); } }catch(e){}"
+      # Redmine sometimes uses a custom event store — nuke the whole handlers list
+      output << "  try{ if(window.jQuery&&jQuery._data){ var d=jQuery._data(window,'events')||{}; delete d.beforeunload; } }catch(e){}"
+      output << "}"
+      output << "var _pcuSnackTimer=null;"
       output << "function pcuShowStatus(msg,bg,color){"
-      output << "  var el=document.getElementById('pcu-status-msg');"
-      output << "  el.style.display='block';el.style.background=bg;el.style.color=color;"
-      output << "  el.style.borderColor=(color==='#166534'?'#bbf7d0':'#fecaca');"
+      output << "  var el=document.getElementById('pcu-snackbar');"
+      output << "  if(!el) return;"
       output << "  el.textContent=msg;"
+      output << "  el.style.background=bg; el.style.color=color;"
+      output << "  el.style.border='1.5px solid '+(color==='#166534'?'#86efac':'#fca5a5');"
+      output << "  el.classList.add('pcu-snack-show');"
+      output << "  if(_pcuSnackTimer) clearTimeout(_pcuSnackTimer);"
+      # Auto-hide after 4 s (for error/info messages; success redirects before timeout)
+      output << "  _pcuSnackTimer=setTimeout(function(){el.classList.remove('pcu-snack-show');},4000);"
       output << "}"
 
       # Inject ➕ Create Child button immediately before Redmine's + ADD subtask link
