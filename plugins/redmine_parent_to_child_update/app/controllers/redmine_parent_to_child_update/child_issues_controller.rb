@@ -358,6 +358,10 @@ module RedmineParentToChildUpdate
                  end
             raw_val = @issue.custom_field_value(cf.id)
             val_str = raw_val.is_a?(Array) ? Array(raw_val).reject(&:empty?).first.to_s : raw_val.to_s
+            # For Task trackers, don't inherit Actual date custom fields from parent
+            if no_inherit && cf.field_format == 'date' && cf.name.to_s.match?(/actual/i)
+              val_str = ''
+            end
             { id: cf.id, name: cf.name, field_format: pv.any? ? 'list' : cf.field_format,
               possible_values: pv,
               default_value: cf.default_value.to_s,

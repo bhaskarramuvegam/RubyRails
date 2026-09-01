@@ -72,6 +72,7 @@
 
     <div class="pcu-setting">
       <label class="inline">
+        <%= hidden_field_tag 'settings[enabled]', '0' %>
         <%= check_box_tag 'settings[enabled]', '1', @settings['enabled'] != '0' %>
         Enable Parent-to-Child Update plugin
       </label>
@@ -79,6 +80,7 @@
 
     <div class="pcu-setting">
       <label class="inline">
+        <%= hidden_field_tag 'settings[enable_logging]', '0' %>
         <%= check_box_tag 'settings[enable_logging]', '1', @settings['enable_logging'] == '1' %>
         Enable debug logging (Rails log)
       </label>
@@ -227,6 +229,7 @@ function pcuResetFooterColor() {
 
     <div class="pcu-setting">
       <label class="inline">
+        <%= hidden_field_tag 'settings[auto_replicate_fields]', '0' %>
         <%= check_box_tag 'settings[auto_replicate_fields]', '1',
               @settings['auto_replicate_fields'] != '0' %>
         Automatically replicate parent fields to child on creation
@@ -247,6 +250,7 @@ function pcuResetFooterColor() {
 
     <div class="pcu-setting">
       <label class="inline">
+        <%= hidden_field_tag 'settings[append_required_fields]', '0' %>
         <%= check_box_tag 'settings[append_required_fields]', '1',
               @settings['append_required_fields'] != '0' %>
         Also copy required custom fields from parent even when not in the list above
@@ -265,6 +269,7 @@ function pcuResetFooterColor() {
 
     <div class="pcu-setting">
       <label class="inline">
+        <%= hidden_field_tag 'settings[create_additional_children]', '0' %>
         <%= check_box_tag 'settings[create_additional_children]', '1',
               @settings['create_additional_children'] != '0' %>
         Allow creating additional child issues alongside the primary child
