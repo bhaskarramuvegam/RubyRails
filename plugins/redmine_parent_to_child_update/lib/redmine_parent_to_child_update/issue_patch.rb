@@ -89,19 +89,31 @@ module RedmineParentToChildUpdate
       def copy_custom_values_from_parent(parent_issue, debug_logging)
         return unless parent_issue.respond_to?(:custom_values) && parent_issue.custom_values.present?
 
+        # Only copy fields that are applicable to the child's tracker+project,
+        # and skip list/enumeration fields whose value is not in the allowed set.
+        child_cf_ids = self.available_custom_fields.map(&:id).to_set rescue Set.new
+
         parent_issue.custom_values.each do |parent_cv|
           custom_field_id = parent_cv.custom_field_id
           value = parent_cv.value
           next unless custom_field_id.present?
+          next if value.blank?
+          # Skip if this field is not applicable to the child tracker
+          next unless child_cf_ids.include?(custom_field_id)
 
           begin
+            cf = IssueCustomField.find_by(id: custom_field_id)
+            next unless cf
+            # Skip fields whose allowed values are context-dependent (list, enumeration, user,
+            # version). These are shown in the popup for the user to fill in explicitly.
+            # Copying them risks "not included in the list" validation errors on save.
+            next if %w[list enumeration user version].include?(cf.field_format)
+
             if self.new_record?
-              # For new records, build custom_values association directly so values persist on save
               child_cv = self.custom_values.build
               child_cv.custom_field_id = custom_field_id
               child_cv.value = value
             else
-              # For existing records, use the setter
               self.custom_field_value(custom_field_id, value) if self.respond_to?('custom_field_value')
             end
             Rails.logger.info("  Copied custom field ID #{custom_field_id}: #{value}") if debug_logging
@@ -117,10 +129,11 @@ module RedmineParentToChildUpdate
         # Iterate over the child's custom fields and append required ones from parent
         self.custom_fields.each do |cf|
           next unless cf.respond_to?(:is_required) ? cf.is_required : cf.required?
+          # Skip context-dependent field types — their valid values depend on project/tracker
+          # membership and can't be safely guessed here. The popup shows them for user input.
+          next if %w[list enumeration user version].include?(cf.field_format)
           value = parent_issue.custom_field_value(cf.id)
-          # Fall back to the field's default_value when the parent doesn't have this field
           value = cf.default_value if value.nil?
-          # Use empty string so the custom_value record is present (avoids "cannot be blank" on missing records)
           value = '' if value.nil?
 
           begin

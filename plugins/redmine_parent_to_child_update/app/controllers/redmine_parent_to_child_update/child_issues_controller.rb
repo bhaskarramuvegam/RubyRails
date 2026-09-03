@@ -44,11 +44,6 @@ module RedmineParentToChildUpdate
 
       begin
         plugin_settings  = Setting.plugin_redmine_parent_to_child_update || {}
-        popup_fields_cfg = plugin_settings['tracker_popup_fields'] || {}
-
-        # Excluded field names (admin config, matched by name case-insensitively)
-        excluded_names = (plugin_settings['popup_excluded_fields'] || 'Release Details')
-                           .split(',').map(&:strip).reject(&:empty?).map(&:downcase)
 
         # ── Workflow field permissions for current user + child tracker ──────────
         # The popup creates a NEW issue, so only the initial status column applies.
@@ -104,7 +99,7 @@ module RedmineParentToChildUpdate
         # tracker.core_fields — exactly the same gate Redmine uses on the issue form.
         tracker_core = tracker.respond_to?(:core_fields) ? Array(tracker.core_fields).map(&:to_s) : []
         # is_private is always available on every tracker (Redmine core field)
-        always_std   = %w[status_id priority_id assigned_to_id author_id description is_private parent_issue_id]
+        always_std   = %w[status_id priority_id assigned_to_id description is_private parent_issue_id]
         applicable_std_keys = STANDARD_POPUP_FIELDS.keys.select { |k|
           always_std.include?(k) || tracker_core.include?(k)
         }
@@ -222,55 +217,28 @@ module RedmineParentToChildUpdate
         end
 
         # ── Determine display order ───────────────────────────────────────────
-        # Stored ids use "std_<key>" for standard fields and plain "<cf_id>" for custom fields.
-        configured_ids = Array(popup_fields_cfg[tracker_id.to_s]).map(&:to_s).uniq
-
-        if configured_ids.any?
-          # Admin has explicitly saved a field config for this tracker.
-          # Show ONLY those fields (filtered to ones applicable to this project).
-          # No auto-append — fields not in the saved config are intentionally excluded.
-          # New std fields are still auto-added; new CFs are NOT (admin must add them explicitly).
-          ordered_ids = configured_ids.select { |fid|
-            if fid.start_with?('std_')
-              applicable_std_keys.include?(fid.sub('std_', ''))
+        # Fields are always auto-detected from Redmine's tracker+project configuration.
+        # If TFC has "after" promotion rules, interleave CFs after their anchor std field;
+        # otherwise fall back to tracker position order.
+        if tfc_after.any?
+          ordered_ids = applicable_std_keys.map { |k| "std_#{k}" }
+          tfc_after.each do |cf_id_s, after_key|
+            cf_id = cf_id_s.to_i
+            next unless applicable_cf_map.key?(cf_id)
+            anchor = "std_#{after_key}"
+            idx = ordered_ids.index(anchor)
+            if idx
+              ordered_ids.insert(idx + 1, cf_id_s) unless ordered_ids.include?(cf_id_s)
             else
-              cf_id = fid.sub(/\Acf_/, '').to_i
-              applicable_cf_map.key?(cf_id)
+              ordered_ids << cf_id_s unless ordered_ids.include?(cf_id_s)
             end
-          }
-          # Auto-append standard fields that are newly applicable (tracker core_fields change)
-          # but do NOT auto-append custom fields — admin controls those explicitly.
-          in_order = ordered_ids.to_set
-          applicable_std_keys.each do |k|
-            fid = "std_#{k}"; ordered_ids << fid unless in_order.include?(fid)
+          end
+          applicable_cfs.each do |cf|
+            ordered_ids << cf.id.to_s unless ordered_ids.include?(cf.id.to_s)
           end
         else
-          # No config saved yet: show all applicable std fields + all applicable CFs.
-          # If TFC has "after" promotion rules, interleave CFs after their anchor std field;
-          # otherwise fall back to tracker position order.
-          if tfc_after.any?
-            ordered_ids = applicable_std_keys.map { |k| "std_#{k}" }
-            # Insert each promoted CF right after its anchor std field
-            tfc_after.each do |cf_id_s, after_key|
-              cf_id = cf_id_s.to_i
-              next unless applicable_cf_map.key?(cf_id)
-              anchor = "std_#{after_key}"
-              idx = ordered_ids.index(anchor)
-              if idx
-                # Collect all CFs promoted after the same anchor, insert in position order
-                ordered_ids.insert(idx + 1, cf_id_s) unless ordered_ids.include?(cf_id_s)
-              else
-                ordered_ids << cf_id_s unless ordered_ids.include?(cf_id_s)
-              end
-            end
-            # Append any remaining CFs that have no promotion rule
-            applicable_cfs.each do |cf|
-              ordered_ids << cf.id.to_s unless ordered_ids.include?(cf.id.to_s)
-            end
-          else
-            ordered_ids = applicable_std_keys.map { |k| "std_#{k}" } +
-                          applicable_cfs.map { |cf| cf.id.to_s }
-          end
+          ordered_ids = applicable_std_keys.map { |k| "std_#{k}" } +
+                        applicable_cfs.map { |cf| cf.id.to_s }
         end
         # Always append TFC extra fields (Sprint, Color, etc.) at the end
         tfc_extra_fields.each { |ef| ordered_ids << "ext_#{ef[:key]}" }
@@ -282,7 +250,6 @@ module RedmineParentToChildUpdate
             defn = STANDARD_POPUP_FIELDS[key]
             next unless defn
             field_name = defn[:name].respond_to?(:call) ? defn[:name].call : defn[:name]
-            next if excluded_names.include?(field_name.to_s.downcase)
             wf_rule = workflow_rules[key].to_s
             next if wf_rule == 'hidden'
             opts = { id: "std_#{key}", std_key: key, name: field_name,
@@ -332,7 +299,6 @@ module RedmineParentToChildUpdate
             ef_key = fid.sub(/\Aext_/, '')
             ef = tfc_extra_fields.find { |e| e[:key] == ef_key }
             next unless ef
-            next if excluded_names.include?(ef[:label].downcase)
             { id: "ext_#{ef_key}", name: ef[:label], field_format: ef[:format],
               possible_values: ef[:possible_values], default_value: '',
               value: '', is_required: false, is_readonly: false,
@@ -342,7 +308,6 @@ module RedmineParentToChildUpdate
             next unless cf_id > 0
             cf = applicable_cf_map[cf_id]   # nil if not applicable to this project
             next unless cf
-            next if excluded_names.include?(cf.name.to_s.downcase)
             cf_wf_rule = workflow_rules[cf.id.to_s].to_s
             next if cf_wf_rule == 'hidden'
             pv = case cf.field_format
@@ -417,7 +382,7 @@ module RedmineParentToChildUpdate
           description: description,
           status: (IssueStatus.respond_to?(:default) ? IssueStatus.default : (begin; IssueStatus.find_by(is_default: true); rescue ActiveRecord::StatementInvalid; nil; end) || IssueStatus.first),
           priority: @issue.priority,
-          author_id: @issue.author_id,
+          author_id: User.current.id,
           parent_id: @issue.id
         )
         primary_child.replicate_fields_from_parent(@issue)
