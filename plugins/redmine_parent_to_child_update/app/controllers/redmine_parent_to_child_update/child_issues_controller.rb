@@ -310,24 +310,49 @@ module RedmineParentToChildUpdate
             next unless cf
             cf_wf_rule = workflow_rules[cf.id.to_s].to_s
             next if cf_wf_rule == 'hidden'
+            # Build possible_values in the format the popup JS expects:
+            #   'list' format  → plain strings (JS: o.value=v; o.textContent=v)
+            #   'select' format → {value:, label:} objects (JS: pv.value||pv, pv.label||pv)
+            pv_format = cf.field_format
             pv = case cf.field_format
                  when 'list'
-                   Array(cf.possible_values).map(&:to_s).reject(&:empty?)
+                   raw = cf.possible_values
+                   vals = raw.is_a?(Array) ? raw.map(&:to_s).reject(&:empty?) :
+                          raw.to_s.split(/\r?\n/).map(&:strip).reject(&:empty?)
+                   Rails.logger.warn("[PCU-CF] CF #{cf.id} '#{cf.name}' list raw=#{raw.inspect} vals=#{vals.inspect}")
+                   vals
                  when 'enumeration'
-                   # CustomFieldEnumeration-backed list
+                   # Enumeration CFs are validated by enumeration ID, not name.
+                   # Use 'select' format so the popup submits the ID as value.
+                   pv_format = 'select'
                    cf.respond_to?(:enumerations) ?
-                     cf.enumerations.active.map { |e| e.name.to_s } :
-                     Array(cf.possible_values).map(&:to_s).reject(&:empty?)
+                     cf.enumerations.active.map { |e| { value: e.id.to_s, label: e.name.to_s } } :
+                     []
+                 when 'user'
+                   pv_format = 'select'
+                   @issue.project.members.includes(:user).map { |m|
+                     { value: m.user_id.to_s, label: m.user.name }
+                   }
+                 when 'version'
+                   pv_format = 'select'
+                   @issue.project.shared_versions.open.map { |v|
+                     { value: v.id.to_s, label: v.name }
+                   }
                  else
                    []
                  end
             raw_val = @issue.custom_field_value(cf.id)
             val_str = raw_val.is_a?(Array) ? Array(raw_val).reject(&:empty?).first.to_s : raw_val.to_s
+            # Never pre-fill context-dependent fields from parent — the parent's value
+            # may not be valid for the child's project/tracker.
+            if %w[user version list enumeration].include?(cf.field_format)
+              val_str = cf.default_value.to_s
+            end
             # For Task trackers, don't inherit Actual date custom fields from parent
             if no_inherit && cf.field_format == 'date' && cf.name.to_s.match?(/actual/i)
               val_str = ''
             end
-            { id: cf.id, name: cf.name, field_format: pv.any? ? 'list' : cf.field_format,
+            { id: cf.id, name: cf.name, field_format: (pv.any? ? pv_format : cf.field_format),
               possible_values: pv,
               default_value: cf.default_value.to_s,
               value: val_str,
@@ -427,15 +452,37 @@ module RedmineParentToChildUpdate
           end
         end
 
-        # Apply custom field values submitted from the popup
-        if params[:custom_field_values].is_a?(ActionController::Parameters) || params[:custom_field_values].is_a?(Hash)
-          params[:custom_field_values].each do |cf_id, value|
-            next if value.blank?
-            cv = primary_child.custom_values.find { |v| v.custom_field_id == cf_id.to_i } ||
-                 primary_child.custom_values.build(custom_field_id: cf_id.to_i)
-            cv.value = value
+        # Apply all custom field values via custom_field_values= (Redmine's in-memory setter).
+        # This is the ONLY correct path — mixing AR .build with the hash setter causes
+        # Redmine's save to use whichever wins, leading to stale/invalid values persisting.
+        begin
+          popup_submitted = (params[:custom_field_values].presence || {})
+          merged_cf_values = {}
+          # 1. Blank all context-dependent fields (list/enumeration/user/version) to clear
+          #    any Redmine-initialised defaults that are invalid for this tracker/project.
+          tracker.custom_fields.where(type: 'IssueCustomField').each do |cf|
+            next unless %w[list enumeration user version].include?(cf.field_format)
+            merged_cf_values[cf.id.to_s] = ''
           end
+          # 2. Overlay with whatever the user actually submitted in the popup (wins over blanks).
+          popup_submitted.each do |cf_id, value|
+            merged_cf_values[cf_id.to_s] = value
+          end
+          primary_child.custom_field_values = merged_cf_values if merged_cf_values.any?
+        rescue => e
+          Rails.logger.warn("[PCU] cf values error: #{e.message}")
         end
+
+        # DEBUG — log all custom values about to be saved
+        Rails.logger.warn("[PCU-DEBUG] === custom_field_values before save ===")
+        primary_child.custom_field_values.each do |cfv|
+          Rails.logger.warn("[PCU-DEBUG]   cf_id=#{cfv.custom_field_id} name=#{cfv.custom_field&.name} format=#{cfv.custom_field&.field_format} value=#{cfv.value.inspect}")
+        end rescue nil
+        Rails.logger.warn("[PCU-DEBUG] === custom_values (AR) before save ===")
+        primary_child.custom_values.each do |cv|
+          Rails.logger.warn("[PCU-DEBUG]   cf_id=#{cv.custom_field_id} name=#{cv.custom_field&.name} format=#{cv.custom_field&.field_format} value=#{cv.value.inspect}")
+        end rescue nil
+
         if primary_child.save
           # save_attachments expects a Hash but params[:attachments] is ActionController::Parameters
           # in Rails 5+, which fails the is_a?(Hash) check inside save_attachments silently.
@@ -459,6 +506,7 @@ module RedmineParentToChildUpdate
           end
           created_children << primary_child
         else
+          Rails.logger.warn("[PCU-DEBUG] Save failed: #{primary_child.errors.full_messages.inspect}")
           return render json: { error: primary_child.errors.full_messages.join(', ') }, status: :unprocessable_entity
         end
 
