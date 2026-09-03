@@ -38,9 +38,10 @@ module RedmineParentToChildUpdate
       tracker = Tracker.find_by(id: tracker_id)
       return render json: { fields: [] } unless tracker
 
-      # Trackers at/below the "Task" level should not inherit Planned Dates or
-      # Assignee from the parent issue — they need independent scheduling.
-      no_inherit = tracker.name.match?(NO_INHERIT_DATE_ASSIGNEE_PATTERN)
+      # Don't inherit dates, assignee or estimated hours when either the child
+      # tracker OR the parent tracker is Task-level — both need independent scheduling.
+      no_inherit = tracker.name.match?(NO_INHERIT_DATE_ASSIGNEE_PATTERN) ||
+                   @issue.tracker.name.match?(NO_INHERIT_DATE_ASSIGNEE_PATTERN)
 
       begin
         plugin_settings  = Setting.plugin_redmine_parent_to_child_update || {}
@@ -264,7 +265,7 @@ module RedmineParentToChildUpdate
               opts[:possible_values] = statuses.map { |s| { value: s.id.to_s, label: s.name } }
               default_status = (IssueStatus.find_by(is_default: true) rescue nil) || IssueStatus.first
               opts[:value] = default_status&.id.to_s || ''
-            when 'estimated_hours' then opts[:value] = @issue.estimated_hours.to_s
+            when 'estimated_hours' then opts[:value] = no_inherit ? '' : @issue.estimated_hours.to_s
             when 'start_date'      then opts[:value] = no_inherit ? '' : (@issue.start_date&.to_s || '')
             when 'due_date'        then opts[:value] = no_inherit ? '' : (@issue.due_date&.to_s || '')
             when 'done_ratio'      then opts[:value] = @issue.done_ratio.to_s
