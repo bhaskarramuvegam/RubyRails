@@ -353,7 +353,13 @@ module RedmineParentToChildUpdate
             # Never pre-fill context-dependent fields from parent — the parent's value
             # may not be valid for the child's project/tracker.
             if %w[user version list enumeration].include?(cf.field_format)
-              val_str = cf.default_value.to_s
+              # Pre-fill from parent only when the parent's value is among the
+              # valid options for this child tracker/project. Otherwise use the
+              # CF's own default so the popup never submits an invalid value.
+              valid_option_values = pv.map { |opt|
+                opt.is_a?(Hash) ? opt[:value].to_s : opt.to_s
+              }.to_set
+              val_str = valid_option_values.include?(val_str) ? val_str : cf.default_value.to_s
             end
             # For Task trackers, don't inherit Actual date custom fields from parent
             if no_inherit && cf.field_format == 'date' && cf.name.to_s.match?(/actual/i)
