@@ -122,8 +122,14 @@ module RedmineParentToChildUpdate
         # the issue popup even if they share the same join table rows.
         # Redmine's is_for_all=true → all projects; false → only listed projects.
         project_id = @issue.project.id
+        # Build exclusion set from plugin settings (one CF name per line, case-insensitive)
+        excluded_cf_names = begin
+          raw = plugin_settings['popup_excluded_cf_names'].to_s
+          raw.split(/\r?\n/).map { |n| n.strip.downcase }.reject(&:empty?).to_set
+        end
         applicable_cfs = tracker.custom_fields.where(type: 'IssueCustomField')
                                 .order(:position).select { |cf|
+          next false if excluded_cf_names.include?(cf.name.to_s.downcase)
           cf.is_for_all? || cf.project_ids.include?(project_id)
         }
         applicable_cf_map = applicable_cfs.index_by(&:id)  # id => cf

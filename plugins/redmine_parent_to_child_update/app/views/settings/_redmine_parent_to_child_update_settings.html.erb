@@ -213,7 +213,30 @@ function pcuResetFooterColor() {
 
 
 <%# ═══════════════════════════════════════════════════════════════════════════
-    SECTION 3b – Child issue type dropdown items (per parent tracker)
+    SECTION 3 – Popup field exclusions
+    ═══════════════════════════════════════════════════════════════════════════ %>
+<div class="pcu-box">
+  <div class="pcu-box-head">Custom fields to exclude from child creation popup</div>
+  <div class="pcu-box-body">
+    <p style="margin:0 0 10px;font-size:13px;color:#555;">
+      Custom fields listed here will never appear in the child creation popup regardless of
+      tracker configuration. Use this to hide milestone/release date fields or any other
+      fields that don't belong in the child creation form.
+    </p>
+    <%= text_area_tag 'settings[popup_excluded_cf_names]',
+          @settings['popup_excluded_cf_names'].to_s,
+          rows: 4,
+          style: 'width:100%;max-width:640px;font-size:13px;padding:6px;font-family:monospace;',
+          placeholder: "BASF APAC Test Server Rel Dt\nBASF LATAM Test Server Rel Dt\nHenkel APAC Test Server Rel Dt" %>
+    <p class="pcu-hint" style="margin-top:5px;">
+      One custom field name per line (case-insensitive). These fields will be hidden in the popup
+      but remain fully functional on the regular issue form.
+    </p>
+  </div>
+</div>
+
+<%# ═══════════════════════════════════════════════════════════════════════════
+    SECTION 4 – Child issue type dropdown items (per parent tracker)
     ═══════════════════════════════════════════════════════════════════════════ %>
 <div class="pcu-box">
   <div class="pcu-box-head">Child issue type dropdown items</div>
