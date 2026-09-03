@@ -72,7 +72,6 @@ module RedmineParentToChildUpdate
                                  IssueStatus.order(:position).first&.id.to_i || 0
                                end
 
-          rule_priority = { 'hidden' => 3, 'readonly' => 2, 'required' => 1 }
           rules = {}
           if role_ids.any? && workflow_status_id > 0
             WorkflowPermission
@@ -81,10 +80,8 @@ module RedmineParentToChildUpdate
               .pluck(:field_name, :rule)
               .each do |field_name, rule|
                 next if rule.blank?
-                existing = rules[field_name]
-                if existing.nil? || rule_priority[rule].to_i > rule_priority[existing].to_i
-                  rules[field_name] = rule
-                end
+                rules[field_name] ||= rule        # first rule wins for non-required
+                rules[field_name] = rule if rule == 'required'  # required always overrides
               end
           end
           Rails.logger.warn("[PCU] workflow: tracker=#{tracker_id} status=#{workflow_status_id} roles=#{role_ids} rules=#{rules}")
@@ -449,14 +446,13 @@ module RedmineParentToChildUpdate
         # Apply TFC extra field values (Sprint, Color, etc.) submitted from the popup.
         # Extra fields are plugin-injected attributes — try setting them as Issue attributes
         # (e.g. sprint_id, color) if the model responds to the setter; otherwise skip.
+        # Collect watcher IDs to add AFTER save — adding before save causes intermittent
+        # "Watchers is invalid" because Redmine checks issue visibility on unsaved records.
+        pending_watcher_ids = []
         if params[:ext_fields].is_a?(ActionController::Parameters) || params[:ext_fields].is_a?(Hash)
           params[:ext_fields].each do |key, value|
             if key.to_s == 'watcher_user_ids'
-              # value may be a single id string or an array (from multiselect [])
-              Array(value).map(&:to_i).select { |uid| uid > 0 }.each do |uid|
-                u = User.find_by(id: uid)
-                primary_child.add_watcher(u) if u
-              end
+              pending_watcher_ids = Array(value).map(&:to_i).select { |uid| uid > 0 }
               next
             end
             next if value.blank?
@@ -486,16 +482,6 @@ module RedmineParentToChildUpdate
           Rails.logger.warn("[PCU] cf values error: #{e.message}")
         end
 
-        # DEBUG — log all custom values about to be saved
-        Rails.logger.warn("[PCU-DEBUG] === custom_field_values before save ===")
-        primary_child.custom_field_values.each do |cfv|
-          Rails.logger.warn("[PCU-DEBUG]   cf_id=#{cfv.custom_field_id} name=#{cfv.custom_field&.name} format=#{cfv.custom_field&.field_format} value=#{cfv.value.inspect}")
-        end rescue nil
-        Rails.logger.warn("[PCU-DEBUG] === custom_values (AR) before save ===")
-        primary_child.custom_values.each do |cv|
-          Rails.logger.warn("[PCU-DEBUG]   cf_id=#{cv.custom_field_id} name=#{cv.custom_field&.name} format=#{cv.custom_field&.field_format} value=#{cv.value.inspect}")
-        end rescue nil
-
         if primary_child.save
           # save_attachments expects a Hash but params[:attachments] is ActionController::Parameters
           # in Rails 5+, which fails the is_a?(Hash) check inside save_attachments silently.
@@ -517,9 +503,13 @@ module RedmineParentToChildUpdate
               end
             end
           end
+          # Add watchers after save so Redmine can resolve issue visibility correctly
+          pending_watcher_ids.each do |uid|
+            u = User.find_by(id: uid)
+            primary_child.add_watcher(u) if u
+          end
           created_children << primary_child
         else
-          Rails.logger.warn("[PCU-DEBUG] Save failed: #{primary_child.errors.full_messages.inspect}")
           return render json: { error: primary_child.errors.full_messages.join(', ') }, status: :unprocessable_entity
         end
 
