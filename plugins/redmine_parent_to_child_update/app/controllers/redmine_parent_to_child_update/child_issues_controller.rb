@@ -263,10 +263,34 @@ module RedmineParentToChildUpdate
                      is_readonly: (wf_rule == 'readonly') }
             case key
             when 'status_id'
-              statuses = begin IssueStatus.respond_to?(:sorted) ? IssueStatus.sorted : IssueStatus.order(:position)
-                         rescue; IssueStatus.all; end
+              # Default status for a new child issue = tracker's own default status
+              default_status = begin
+                (tracker.respond_to?(:default_status) && tracker.default_status) ||
+                IssueStatus.find_by(is_default: true) ||
+                IssueStatus.order(:position).first
+              rescue; IssueStatus.order(:position).first; end
+
+              # Allowed statuses = default + those reachable via workflow transitions
+              # from the default status for this tracker + user's roles.
+              wf_role_ids = User.current.roles_for_project(@issue.project)
+                               .select { |r| r.builtin == 0 }.map(&:id)
+              allowed_ids = Set.new
+              allowed_ids << default_status.id if default_status
+              if wf_role_ids.any? && default_status
+                WorkflowTransition
+                  .where(tracker_id: tracker_id, role_id: wf_role_ids,
+                         old_status_id: default_status.id)
+                  .pluck(:new_status_id)
+                  .each { |sid| allowed_ids << sid }
+              end
+
+              all_sorted = begin
+                IssueStatus.respond_to?(:sorted) ? IssueStatus.sorted : IssueStatus.order(:position)
+              rescue; IssueStatus.all; end
+              statuses = all_sorted.select { |s| allowed_ids.include?(s.id) }
+              statuses = all_sorted.to_a if statuses.empty?  # fallback: show all if nothing matched
+
               opts[:possible_values] = statuses.map { |s| { value: s.id.to_s, label: s.name } }
-              default_status = (IssueStatus.find_by(is_default: true) rescue nil) || IssueStatus.first
               opts[:value] = default_status&.id.to_s || ''
             when 'estimated_hours' then opts[:value] = no_inherit ? '' : @issue.estimated_hours.to_s
             when 'start_date'      then opts[:value] = no_inherit ? '' : (@issue.start_date&.to_s || '')
