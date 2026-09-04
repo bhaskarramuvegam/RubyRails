@@ -189,7 +189,16 @@ module RedmineParentToChildUpdate
       def available_child_trackers
         return [] unless project
 
-        project.trackers.select { |t| t.id != tracker&.id }
+        # If the admin has explicitly configured the same tracker as a child option,
+        # allow it. Otherwise exclude the parent's own tracker (default behaviour).
+        cfg = Setting.plugin_redmine_parent_to_child_update rescue {}
+        child_filter = (cfg['popup_child_trackers_by_parent'] || {})[tracker&.id.to_s].to_s
+                         .split(',').map(&:strip).map(&:downcase).reject(&:empty?)
+        same_tracker_allowed = child_filter.any? { |n| n == tracker&.name.to_s.downcase }
+
+        project.trackers.select { |t|
+          t.id != tracker&.id || same_tracker_allowed
+        }
       end
 
       def create_additional_children_enabled?
