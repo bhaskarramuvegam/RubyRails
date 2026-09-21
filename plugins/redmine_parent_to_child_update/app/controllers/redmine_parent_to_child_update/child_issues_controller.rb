@@ -195,29 +195,91 @@ module RedmineParentToChildUpdate
           tfc_extra_fields << { key: 'color', label: 'Color', format: 'color', possible_values: [] }
         end
 
-        # Sprint — Redmine Agile: try common model names for sprint options
-        if !extra_key_set.include?('agile_sprint_id') && !extra_key_set.include?('sprint_id')
-          sprint_attr = [:agile_sprint_id, :sprint_id].find { |a| @issue.respond_to?(a) }
-          if sprint_attr
-            sprint_options = begin
-              sprint_class = ['AgileSprint', 'AgileVersion', 'Sprint'].map { |n|
-                Object.const_get(n) rescue nil
-              }.compact.first
-              if sprint_class && sprint_class.respond_to?(:where)
-                sprint_class.where(project_id: @issue.project.id).map { |s|
+        # Sprint — Redmine Agile plugin field (agile_data[agile_sprint_id]).
+        # Shown only to users who belong to at least one group configured in
+        # Administration > Groups (reads live from Redmine's groups_users table).
+        # Respects tracker field configuration: if Sprint is hidden for this
+        # tracker in the field config plugin, it is suppressed regardless of group.
+        user_in_any_group = begin
+          User.find(User.current.id).groups.exists?
+        rescue => e
+          Rails.logger.warn("[PCU] Sprint group check error: #{e.message}")
+          false
+        end
+
+        sprint_hidden_in_config = begin
+          pid_s_chk = project_id.to_s
+          tid_s_chk = tracker_id.to_s
+          if tfc_active
+            hidden_keys = TrackerFieldsConfiguration.hidden_field_keys(pid_s_chk, tid_s_chk) rescue []
+            hidden_keys.include?('ext_agile_sprint_id') || hidden_keys.include?('agile_sprint_id')
+          else
+            false
+          end
+        rescue
+          false
+        end
+
+        if user_in_any_group && !sprint_hidden_in_config && !extra_key_set.include?('agile_sprint_id')
+          sprint_options = begin
+            sprint_class = ['AgileSprint', 'AgileVersion', 'Agile::Sprint', 'Sprint'].map { |n|
+              Object.const_get(n) rescue nil
+            }.compact.first
+
+            options = []
+            if sprint_class && sprint_class.respond_to?(:where)
+              col = sprint_class.column_names rescue []
+
+              # Use the Agile plugin's own open/active scope if it exists,
+              # otherwise fall back progressively to broader queries so all
+              # visible sprints match what the real Agile form shows.
+              base = if sprint_class.respond_to?(:open)
+                       sprint_class.open
+                     elsif sprint_class.respond_to?(:active)
+                       sprint_class.active
+                     elsif col.include?('status') || col.include?('is_closed')
+                       # Exclude closed sprints the same way Agile does
+                       closed_col = col.include?('is_closed') ? 'is_closed' : 'status'
+                       closed_val = col.include?('is_closed') ? true : 2  # 2 = closed in Agile
+                       sprint_class.where.not(closed_col => closed_val)
+                     else
+                       sprint_class.all
+                     end
+
+              # Scope to the current project if the table has project_id
+              scoped = if col.include?('project_id')
+                         # Include sprints for this project OR shared sprints (project_id nil)
+                         base.where(project_id: [@issue.project.id, nil])
+                       elsif col.include?('version_id')
+                         version_ids = @issue.project.versions.pluck(:id)
+                         base.where(version_id: version_ids)
+                       else
+                         base
+                       end
+
+              options = scoped.order(:name).map { |s|
+                { value: s.id.to_s, label: s.name.to_s }
+              }
+
+              # If scoped query returned nothing, fall back to ALL sprints
+              # (handles shared-sprint setups where project_id isn't used)
+              if options.empty?
+                options = sprint_class.order(:name).map { |s|
                   { value: s.id.to_s, label: s.name.to_s }
                 }
-              else
-                []
               end
-            rescue
-              []
             end
-            tfc_extra_fields << {
-              key: sprint_attr.to_s, label: 'Sprint', format: 'select',
-              possible_values: sprint_options
-            }
+
+            Rails.logger.warn("[PCU] Sprint class=#{sprint_class&.name} cols=#{(sprint_class&.column_names rescue []).inspect} count=#{options.size}")
+            options
+          rescue => e
+            Rails.logger.warn("[PCU] Sprint options error: #{e.message}\n#{e.backtrace.first(2).join(' | ')}")
+            []
           end
+          tfc_extra_fields << {
+            key: 'agile_sprint_id', label: 'Sprint', format: 'select',
+            possible_values: sprint_options
+          }
         end
 
         # ── Determine display order ───────────────────────────────────────────
@@ -473,10 +535,16 @@ module RedmineParentToChildUpdate
         # Collect watcher IDs to add AFTER save — adding before save causes intermittent
         # "Watchers is invalid" because Redmine checks issue visibility on unsaved records.
         pending_watcher_ids = []
+        pending_agile_sprint_id = nil
         if params[:ext_fields].is_a?(ActionController::Parameters) || params[:ext_fields].is_a?(Hash)
           params[:ext_fields].each do |key, value|
             if key.to_s == 'watcher_user_ids'
               pending_watcher_ids = Array(value).map(&:to_i).select { |uid| uid > 0 }
+              next
+            end
+            # Sprint is saved via AgileData after issue save — collect it here
+            if key.to_s == 'agile_sprint_id'
+              pending_agile_sprint_id = value.to_i if value.to_i > 0
               next
             end
             next if value.blank?
@@ -531,6 +599,26 @@ module RedmineParentToChildUpdate
           pending_watcher_ids.each do |uid|
             u = User.find_by(id: uid)
             primary_child.add_watcher(u) if u
+          end
+          # Sprint — Agile plugin stores sprint in AgileData (agile_data table),
+          # keyed by issue_id. HTML field: agile_data_attributes_agile_sprint_id.
+          # Must use find_or_initialize_by(issue_id:) AFTER save so issue_id exists.
+          if pending_agile_sprint_id
+            begin
+              agile_data_class = ['AgileData', 'Agile::Data'].map { |n|
+                Object.const_get(n) rescue nil
+              }.compact.first
+              if agile_data_class
+                ad = agile_data_class.find_or_initialize_by(issue_id: primary_child.id)
+                ad.agile_sprint_id = pending_agile_sprint_id
+                ad.save!
+                Rails.logger.warn("[PCU] AgileData sprint saved: issue=#{primary_child.id} sprint=#{pending_agile_sprint_id}")
+              else
+                Rails.logger.warn("[PCU] AgileData class not found — sprint not saved")
+              end
+            rescue => e
+              Rails.logger.warn("[PCU] AgileData sprint save error: #{e.message}\n#{e.backtrace.first(3).join("\n")}")
+            end
           end
           created_children << primary_child
         else
