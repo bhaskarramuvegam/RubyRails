@@ -46,6 +46,14 @@
   <div class="tfc-box-body">
     <div class="tfc-setting">
       <label class="inline">
+        <%# check_box_tag has no model to attach to, so - unlike the check_box
+            form helper - it doesn't auto-add a hidden "0" fallback. Without
+            one, unchecking this and saving submits nothing for
+            settings[enabled] at all (browsers never submit an unchecked
+            checkbox), and enabled? treats a missing key as still-enabled
+            (nil != '0' is true) - so it silently stayed enabled and
+            redisplayed checked no matter what was clicked. %>
+        <%= hidden_field_tag 'settings[enabled]', '0', id: nil %>
         <%= check_box_tag 'settings[enabled]', '1', @settings['enabled'] != '0' %>
         Enable Tracker Fields Configuration plugin
       </label>

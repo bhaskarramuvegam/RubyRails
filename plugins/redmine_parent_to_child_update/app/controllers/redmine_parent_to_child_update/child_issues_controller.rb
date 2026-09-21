@@ -208,15 +208,30 @@ module RedmineParentToChildUpdate
         end
 
         sprint_hidden_in_config = begin
-          pid_s_chk = project_id.to_s
-          tid_s_chk = tracker_id.to_s
           if tfc_active
-            hidden_keys = TrackerFieldsConfiguration.hidden_field_keys(pid_s_chk, tid_s_chk) rescue []
-            hidden_keys.include?('ext_agile_sprint_id') || hidden_keys.include?('agile_sprint_id')
+            tid_s_chk = tracker_id.to_s
+            pid_s_chk = project_id.to_s
+
+            # TFC hides fields per (project, tracker). "All projects" configs may be
+            # stored with project_id=nil/'0'/'all' — check all variants.
+            all_hidden = []
+            [pid_s_chk, nil, '0', 'all', ''].each do |pid_try|
+              begin
+                keys = TrackerFieldsConfiguration.hidden_field_keys(pid_try, tid_s_chk)
+                all_hidden.concat(Array(keys))
+              rescue; end
+            end
+            all_hidden.uniq!
+            Rails.logger.warn("[PCU] TFC hidden keys for tracker=#{tid_s_chk} project=#{pid_s_chk}: #{all_hidden.inspect}")
+
+            # Sprint may be registered under any of these keys by the Agile plugin
+            sprint_keys = %w[agile_sprint_id ext_agile_sprint_id sprint agile_sprint Sprint]
+            all_hidden.any? { |k| sprint_keys.include?(k.to_s) }
           else
             false
           end
-        rescue
+        rescue => e
+          Rails.logger.warn("[PCU] TFC sprint hidden check error: #{e.message}")
           false
         end
 
