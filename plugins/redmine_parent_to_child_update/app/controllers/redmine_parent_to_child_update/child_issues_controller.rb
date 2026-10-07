@@ -230,25 +230,24 @@ module RedmineParentToChildUpdate
             if sprint_class && sprint_class.respond_to?(:where)
               col = sprint_class.column_names rescue []
 
-              # Use the Agile plugin's own open/active scope if it exists,
-              # otherwise fall back progressively to broader queries so all
-              # visible sprints match what the real Agile form shows.
+              # ── Filter: Open sprints only ─────────────────────────────────────
+              # Try the plugin's own named scope first; fall back to column-level filter.
+              # AgileSprint status values: 'open' (string) or 1 (integer) = Open;
+              # 'locked'/2 = Locked; 'closed'/3 = Closed. Exclude anything that isn't open.
               base = if sprint_class.respond_to?(:open)
                        sprint_class.open
                      elsif sprint_class.respond_to?(:active)
                        sprint_class.active
-                     elsif col.include?('status') || col.include?('is_closed')
-                       # Exclude closed sprints the same way Agile does
-                       closed_col = col.include?('is_closed') ? 'is_closed' : 'status'
-                       closed_val = col.include?('is_closed') ? true : 2  # 2 = closed in Agile
-                       sprint_class.where.not(closed_col => closed_val)
+                     elsif col.include?('status')
+                       sprint_class.where(status: ['open', 1])
+                     elsif col.include?('is_closed')
+                       sprint_class.where(is_closed: [false, nil])
                      else
                        sprint_class.all
                      end
 
-              # Scope to the current project if the table has project_id
+              # ── Project scope ─────────────────────────────────────────────────
               scoped = if col.include?('project_id')
-                         # Include sprints for this project OR shared sprints (project_id nil)
                          base.where(project_id: [@issue.project.id, nil])
                        elsif col.include?('version_id')
                          version_ids = @issue.project.versions.pluck(:id)
@@ -257,20 +256,24 @@ module RedmineParentToChildUpdate
                          base
                        end
 
-              options = scoped.order(:name).map { |s|
+              # ── Sort: newest start_date first, fall back to end_date, then name ──
+              sort_col = col.include?('start_date') ? 'start_date' :
+                         col.include?('end_date')   ? 'end_date'   : 'name'
+              sort_dir = sort_col == 'name' ? :asc : :desc
+
+              options = scoped.order(sort_col => sort_dir).map { |s|
                 { value: s.id.to_s, label: s.name.to_s }
               }
 
-              # If scoped query returned nothing, fall back to ALL sprints
-              # (handles shared-sprint setups where project_id isn't used)
+              # Fallback: if scoped returns nothing, show all open sprints across projects
               if options.empty?
-                options = sprint_class.order(:name).map { |s|
+                options = base.order(sort_col => sort_dir).map { |s|
                   { value: s.id.to_s, label: s.name.to_s }
                 }
               end
             end
 
-            Rails.logger.warn("[PCU] Sprint class=#{sprint_class&.name} cols=#{(sprint_class&.column_names rescue []).inspect} count=#{options.size}")
+            Rails.logger.warn("[PCU] Sprint class=#{sprint_class&.name} sort=#{sort_col rescue '?'} count=#{options.size}")
             options
           rescue => e
             Rails.logger.warn("[PCU] Sprint options error: #{e.message}\n#{e.backtrace.first(2).join(' | ')}")
