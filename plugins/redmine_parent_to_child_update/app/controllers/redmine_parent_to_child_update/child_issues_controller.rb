@@ -10,6 +10,9 @@ module RedmineParentToChildUpdate
     # All supported standard Redmine issue fields for the popup.
     # Add new entries here as Redmine gains new fields — they auto-appear in admin config.
     NO_INHERIT_DATE_ASSIGNEE_PATTERN = /task/i
+    # Description is copied to children ONLY when the parent is a Change Request.
+    # All other parent trackers (User Story, Task, Bug, …) produce an empty description.
+    DESCRIPTION_INHERIT_FROM_PATTERN = /change\s*request|\Acr\z/i
 
     STANDARD_POPUP_FIELDS = {
       'status_id'        => { name: ->{ l(:field_status)          }, format: 'select' },
@@ -355,7 +358,8 @@ module RedmineParentToChildUpdate
             when 'start_date'      then opts[:value] = no_inherit ? '' : (@issue.start_date&.to_s || '')
             when 'due_date'        then opts[:value] = no_inherit ? '' : (@issue.due_date&.to_s || '')
             when 'done_ratio'      then opts[:value] = @issue.done_ratio.to_s
-            when 'description'     then opts[:value] = @issue.description.to_s
+            when 'description'
+              opts[:value] = @issue.tracker.name.match?(DESCRIPTION_INHERIT_FROM_PATTERN) ? @issue.description.to_s : ''
             when 'assigned_to_id'
               opts[:possible_values] = @issue.project.members.includes(:user)
                 .map { |m| { value: m.user_id.to_s, label: m.user.name } }

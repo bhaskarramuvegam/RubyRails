@@ -50,6 +50,9 @@ module RedmineParentToChildUpdate
             when 'fixed_version'
               self.fixed_version_id = parent_issue.fixed_version_id
             when 'description'
+              # Copy description only when parent is a Change Request (CR → User Story).
+              # All other parent trackers produce an empty description on the child.
+              next unless parent_issue.tracker.name.match?(/change\s*request|\Acr\z/i)
               self.description = "[Child of Issue #{parent_issue.id}]\n\n" + parent_issue.description.to_s
             when 'due_date'
               self.due_date = parent_issue.due_date
