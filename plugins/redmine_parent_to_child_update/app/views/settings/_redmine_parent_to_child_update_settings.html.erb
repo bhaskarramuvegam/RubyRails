@@ -238,7 +238,31 @@ function pcuResetFooterColor() {
 </div>
 
 <%# ═══════════════════════════════════════════════════════════════════════════
-    SECTION 4 – Child issue type dropdown items (per parent tracker)
+    SECTION 4 – Sprint field visibility
+    ═══════════════════════════════════════════════════════════════════════════ %>
+<div class="pcu-box">
+  <div class="pcu-box-head">Sprint field — hide for these child trackers</div>
+  <div class="pcu-box-body">
+    <p style="margin:0 0 10px;font-size:13px;color:#555;">
+      Enter child tracker names (one per line) for which the <strong>Sprint</strong>
+      dropdown will <em>not</em> appear in the child creation popup, even for
+      Scrum Master group members. Leave blank to show Sprint on all trackers
+      (still subject to group membership).
+    </p>
+    <%= text_area_tag 'settings[sprint_hidden_trackers]',
+          @settings['sprint_hidden_trackers'].to_s,
+          rows: 4,
+          style: 'width:100%;max-width:480px;font-size:13px;padding:6px;font-family:monospace;',
+          placeholder: "Change Request\nUser Story" %>
+    <p class="pcu-hint" style="margin-top:5px;">
+      One tracker name per line, case-insensitive. Tracker names must match exactly
+      as shown in <strong>Administration &rarr; Types</strong>.
+    </p>
+  </div>
+</div>
+
+<%# ═══════════════════════════════════════════════════════════════════════════
+    SECTION 5 – Child issue type dropdown items (per parent tracker)
     ═══════════════════════════════════════════════════════════════════════════ %>
 <div class="pcu-box">
   <div class="pcu-box-head">Child issue type dropdown items (per parent tracker)</div>

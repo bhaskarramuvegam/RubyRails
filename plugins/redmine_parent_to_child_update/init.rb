@@ -37,6 +37,9 @@ Redmine::Plugin.register :redmine_parent_to_child_update do
     # Popup base font size in px (all text scales from this)
     'popup_font_size' => '12.5',
     # Popup footer gradient: two hex colors separated by comma (start, end)
-    'popup_footer_color' => '#f8fafc,#eff6ff'
+    'popup_footer_color' => '#f8fafc,#eff6ff',
+    # Tracker names (one per line) for which the Sprint field is hidden in the popup.
+    # Scrum Master group members still see Sprint on all other trackers.
+    'sprint_hidden_trackers' => "Change Request\nUser Story"
   }, partial: 'settings/redmine_parent_to_child_update_settings'
 end

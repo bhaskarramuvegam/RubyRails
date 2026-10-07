@@ -207,31 +207,13 @@ module RedmineParentToChildUpdate
           false
         end
 
+        # Sprint visibility: hidden for trackers listed in plugin settings.
+        # Reads from Administration > Plugins > PCU settings — no code change needed.
         sprint_hidden_in_config = begin
-          if tfc_active
-            tid_s_chk = tracker_id.to_s
-            pid_s_chk = project_id.to_s
-
-            # TFC hides fields per (project, tracker). "All projects" configs may be
-            # stored with project_id=nil/'0'/'all' — check all variants.
-            all_hidden = []
-            [pid_s_chk, nil, '0', 'all', ''].each do |pid_try|
-              begin
-                keys = TrackerFieldsConfiguration.hidden_field_keys(pid_try, tid_s_chk)
-                all_hidden.concat(Array(keys))
-              rescue; end
-            end
-            all_hidden.uniq!
-            Rails.logger.warn("[PCU] TFC hidden keys for tracker=#{tid_s_chk} project=#{pid_s_chk}: #{all_hidden.inspect}")
-
-            # Sprint may be registered under any of these keys by the Agile plugin
-            sprint_keys = %w[agile_sprint_id ext_agile_sprint_id sprint agile_sprint Sprint]
-            all_hidden.any? { |k| sprint_keys.include?(k.to_s) }
-          else
-            false
-          end
-        rescue => e
-          Rails.logger.warn("[PCU] TFC sprint hidden check error: #{e.message}")
+          raw = plugin_settings['sprint_hidden_trackers'].to_s
+          hidden_names = raw.split(/\r?\n/).map { |n| n.strip.downcase }.reject(&:empty?).to_set
+          hidden_names.include?(tracker.name.to_s.downcase)
+        rescue
           false
         end
 
