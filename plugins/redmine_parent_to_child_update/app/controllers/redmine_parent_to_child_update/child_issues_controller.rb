@@ -195,13 +195,13 @@ module RedmineParentToChildUpdate
           tfc_extra_fields << { key: 'color', label: 'Color', format: 'color', possible_values: [] }
         end
 
-        # Sprint — Redmine Agile plugin field (agile_data[agile_sprint_id]).
-        # Shown only to users who belong to at least one group configured in
-        # Administration > Groups (reads live from Redmine's groups_users table).
-        # Respects tracker field configuration: if Sprint is hidden for this
-        # tracker in the field config plugin, it is suppressed regardless of group.
+        # Sprint — shown only to members of the "Scrum Master" group in
+        # Administration > Groups. Reads live from Redmine's groups_users table —
+        # no plugin config needed. Any user NOT in that group sees no Sprint field.
         user_in_any_group = begin
-          User.find(User.current.id).groups.exists?
+          scrum_master_group = Group.find_by(name: 'Scrum Master')
+          scrum_master_group.present? &&
+            scrum_master_group.users.exists?(id: User.current.id)
         rescue => e
           Rails.logger.warn("[PCU] Sprint group check error: #{e.message}")
           false
