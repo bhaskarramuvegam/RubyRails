@@ -2,10 +2,9 @@
 # CSV Time Format – QueriesHelper patch
 #
 # Redmine stores estimated/spent/remaining hours as Float (decimal hours).
-# When users download a CSV the values come out as e.g. "48.5833333".
+# When users download a CSV the values come out as e.g. "48.5833333" or "0.5".
 # This patch intercepts csv_content for every hours column and formats the
-# value as HH:MM (e.g. 48:35) so the exported file is human-readable and
-# can be used directly in spreadsheets without manual conversion.
+# value as HH:MM (e.g. 48:35, 00:30) so the exported file is human-readable.
 # ─────────────────────────────────────────────────────────────────────────────
 module RedmineCsvTimeFormat
   module QueriesHelperPatch
@@ -19,8 +18,8 @@ module RedmineCsvTimeFormat
     ].freeze
 
     # Called once per cell during CSV generation.
-    # We intercept hours columns; everything else falls through to Redmine's
-    # original implementation via super.
+    # Intercepts hours columns and formats them as HH:MM.
+    # Everything else falls through to Redmine's original implementation.
     def csv_content(column, issue)
       col_name = column.name.to_s
       return super unless HOURS_COLUMN_NAMES.include?(col_name)
@@ -28,7 +27,7 @@ module RedmineCsvTimeFormat
       value = column.value_object(issue)
       return '' if value.nil?
 
-      if value.is_a?(Float) || value.is_a?(Numeric)
+      if value.is_a?(Numeric)
         RedmineCsvTimeFormat.hours_to_hhmm(value.to_f)
       else
         super
@@ -36,17 +35,18 @@ module RedmineCsvTimeFormat
     end
   end
 
-  # Convert a decimal-hours Float to "H:MM" string.
+  # Converts a decimal-hours Float to zero-padded "HH:MM" string.
   # Examples:
+  #   0.5        => "00:30"
+  #   3.25       => "03:15"
   #   48.5833... => "48:35"
-  #   0.5        => "0:30"
-  #   0.0        => "0:00"
+  #   0.0        => "00:00"
   def self.hours_to_hhmm(float_hours)
     return '' if float_hours.nil?
     negative   = float_hours < 0
     total_mins = (float_hours.abs * 60).round
     h          = total_mins / 60
     m          = total_mins % 60
-    "#{negative ? '-' : ''}#{h}:#{format('%02d', m)}"
+    "#{negative ? '-' : ''}#{format('%02d', h)}:#{format('%02d', m)}"
   end
 end
