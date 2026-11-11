@@ -5,9 +5,18 @@
 
 require File.expand_path('../lib/redmine_parent_to_child_update/issue_patch', __FILE__)
 require File.expand_path('../lib/redmine_parent_to_child_update/hooks', __FILE__)
+require File.expand_path('../lib/redmine_csv_time_format/queries_helper_patch', __FILE__)
 require_dependency 'issue'
 
 Issue.send(:include, RedmineParentToChildUpdate::IssuePatch)
+
+# Apply CSV time-format patch to QueriesHelper (formats hours as HH:MM in exports)
+Rails.application.config.to_prepare do
+  require_dependency 'queries_helper'
+  unless QueriesHelper.ancestors.include?(RedmineCsvTimeFormat::QueriesHelperPatch)
+    QueriesHelper.prepend RedmineCsvTimeFormat::QueriesHelperPatch
+  end
+end
 
 Redmine::Plugin.register :redmine_parent_to_child_update do
   name 'Parent to Child Update Plugin'
