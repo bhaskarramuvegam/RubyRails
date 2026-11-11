@@ -13,9 +13,10 @@ Issue.send(:include, RedmineParentToChildUpdate::IssuePatch)
 # Apply CSV time-format patch to QueriesHelper (formats hours as HH:MM in exports)
 Rails.application.config.to_prepare do
   require_dependency 'queries_helper'
-  unless QueriesHelper.ancestors.include?(RedmineCsvTimeFormat::QueriesHelperPatch)
-    QueriesHelper.prepend RedmineCsvTimeFormat::QueriesHelperPatch
-  end
+  RedmineCsvTimeFormat.apply!
+end
+Rails.application.config.after_initialize do
+  RedmineCsvTimeFormat.apply!
 end
 
 Redmine::Plugin.register :redmine_parent_to_child_update do
